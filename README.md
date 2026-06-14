@@ -1,0 +1,65 @@
+<div align=center>
+
+<img src="extras/banner.png" alt="Banner" width="35%">
+
+</div>
+<h1 align=center>Half-Life 2 Nintendo Switch port</h1>
+
+This is a wrapper/port of the Android version of Half-Life 2 (v1.16.29, nillerusr Source engine port). 
+It loads the original game's ARM64 libraries, and runs them as-is in a minimalist fake-Android environment
+
+### How to install
+
+You're going to need:
+* the `.apk` and the cache/OBB data of Half-Life 2 Android v1.16.29 (from a legally 
+ obtained copy of the game)
+
+To install, create `/switch/hl2_nx/` on your SD card and lay it out like this:
+
+```
+/switch/hl2_nx/
+  hl2_nx.nro
+  lib/                  <- all 27 .so files from the APK's lib/arm64-v8a/
+  assets/extras_dir.vpk <- from the APK's assets/
+  files/                <- the fonts from the APK's assets/ (dejavusans.ttf,
+                           dejavusans-bold.ttf, DroidSansFallback.ttf,
+                           LiberationMono-Regular.ttf, Itim-Regular.otf)
+  hl2/                  <- from the game cache (the big one: hl2_pak, textures, sounds, maps...)
+  platform/             <- from the game cache
+```
+
+### Notes
+
+This will not work in applet/album mode — use a game override (hold R on a title) or a forwarder.
+The Switch needs the full application memory pool
+
+A `config.txt` is created next to the nro on first run:
+* `screen_width` / `screen_height` — passed as `-w`/`-h` when both set; `-1` lets the engine pick
+* `args` — extra Source command line (default `-console`)
+* `lang` — `LANG` environment value (default `en_US`)
+
+### How to build
+
+You need devkitA64 plus the following pacman packages:
+* `switch-sdl2`
+* `switch-mesa`
+* `switch-libdrm_nouveau`
+* `switch-zlib`
+* `switch-ffmpeg`
+
+### Credits
+
+* nillerusr for the Android Source engine port this wraps;
+* TheOfficialFloW & fgsfds for the so-loader lineage;
+
+### Legal
+
+This project has no affiliation with Valve Corporation. "Half-Life" and "Source" are trademarks
+of their respective owners. All Rights Reserved.
+
+No assets or program code from the original game or its Android port are included in this project.
+We do not condone piracy in any way, shape or form and encourage users to legally own the original
+game.
+
+Unless specified otherwise, the source code provided in this repository is licensed under the MIT
+License. Please see the accompanying LICENSE file.
