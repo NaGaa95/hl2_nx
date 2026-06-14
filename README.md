@@ -52,6 +52,12 @@ You need devkitA64 plus the following pacman packages:
 * nillerusr for the Android Source engine port this wraps
 * TheOfficialFloW & fgsfds for the so-loader lineage
 
+### Support
+
+If you enjoy my work and want to support me :
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/D1D1P2MOG)
+
 ### Legal
 
 This project has no affiliation with Valve Corporation. "Half-Life" and "Source" are trademarks
