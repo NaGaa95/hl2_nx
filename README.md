@@ -1,12 +1,12 @@
 <div align=center>
 
-<img src="extras/banner.png" alt="Banner" width="35%">
+<img src="extras/banner.png" alt="Banner" width="25%">
 
 </div>
-<h1 align=center>Half-Life 2 Nintendo Switch port</h1>
+<h1 align=center>Half-Life 2 - Nintendo Switch port</h1>
 
-This is a wrapper/port of the Android version of Half-Life 2 (v1.16.29, nillerusr Source engine port). 
-It loads the original game's ARM64 libraries, and runs them as-is in a minimalist fake-Android environment
+This is a wrapper/port of the Android version of Half-Life 2 (v1.16.29, nillerusr Source engine port). <br/>
+It loads the original game's ARM64 libraries, and runs them as-is in a minimalist fake-Android environment.
 
 ### How to install
 
@@ -49,8 +49,8 @@ You need devkitA64 plus the following pacman packages:
 
 ### Credits
 
-* nillerusr for the Android Source engine port this wraps;
-* TheOfficialFloW & fgsfds for the so-loader lineage;
+* nillerusr for the Android Source engine port this wraps
+* TheOfficialFloW & fgsfds for the so-loader lineage
 
 ### Legal
 
