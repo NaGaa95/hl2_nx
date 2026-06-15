@@ -5,13 +5,13 @@
 </div>
 <h1 align=center>Half-Life 2 - Nintendo Switch port</h1>
 
-This is a wrapper/port of the Android version of Half-Life 2 (v1.16.29, nillerusr Source engine port). <br/>
+This is a wrapper/port of the Android version of Half-Life 2 (v1.16.29 - 1.17.0025, nillerusr Source engine port). <br/>
 It loads the original game's ARM64 libraries, and runs them as-is in a minimalist fake-Android environment.
 
 ### How to install
 
 You're going to need:
-* the `.apk` and the cache/OBB data of Half-Life 2 Android v1.16.29 (from a legally 
+* the Source Engine `.apk` [HERE](https://arumoon.github.io/source-engine-download/) and Half-Life 2 Files (from a legally 
  obtained copy of the game)
 
 To install, create `/switch/hl2_nx/` on your SD card and lay it out like this:
@@ -24,8 +24,10 @@ To install, create `/switch/hl2_nx/` on your SD card and lay it out like this:
   files/                <- the fonts from the APK's assets/ (dejavusans.ttf,
                            dejavusans-bold.ttf, DroidSansFallback.ttf,
                            LiberationMono-Regular.ttf, Itim-Regular.otf)
-  hl2/                  <- from the game cache (the big one: hl2_pak, textures, sounds, maps...)
-  platform/             <- from the game cache
+  hl2/                  <- from the game data (the big one: hl2_pak, textures, sounds, maps...)
+  episodic/             <- episode 1 (Optional)
+  ep2/                  <- episode 2 (Optional)
+  platform/             <- from the game data
 ```
 
 ### Notes
@@ -35,6 +37,7 @@ The Switch needs the full application memory pool
 
 A `config.txt` is created next to the nro on first run:
 * `screen_width` / `screen_height` — passed as `-w`/`-h` when both set; `-1` lets the engine pick
+* `gamedir` — game to launch: `hl2` (default), `episodic` (Episode One), or `ep2` (Episode Two)
 * `args` — extra Source command line (default `-console`)
 * `lang` — `LANG` environment value (default `en_US`)
 
