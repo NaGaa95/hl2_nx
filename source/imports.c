@@ -472,6 +472,66 @@ static SDL_bool SDL_SetHint_fake(const char *name, const char *value) {
   return SDL_SetHint(name, value);
 }
 
+// Replaces SDL_StartTextInput: run the libnx swkbd, then inject a Backspace clear
+// + the typed text as events (engine reads them back via SDL_AddEventWatch). Fixes
+// switch-sdl2 dropping the first char and appending instead of replacing the field.
+static void osk_push_key(SDL_Scancode sc, SDL_Keycode kc) {
+  SDL_Event e;
+  SDL_zero(e);
+  e.key.keysym.scancode = sc;
+  e.key.keysym.sym = kc;
+  e.type = SDL_KEYDOWN; e.key.state = SDL_PRESSED;  SDL_PushEvent(&e);
+  e.type = SDL_KEYUP;   e.key.state = SDL_RELEASED; SDL_PushEvent(&e);
+}
+
+static int osk_utf8_len(unsigned char c) {
+  if (c < 0x80) return 1;
+  if ((c >> 5) == 0x6) return 2;
+  if ((c >> 4) == 0xe) return 3;
+  if ((c >> 3) == 0x1e) return 4;
+  return 1;
+}
+
+static void osk_inject(const char *s) {
+  // clear the field first so typing replaces, not appends (extra Backspaces no-op)
+  for (int i = 0; i < 64; i++)
+    osk_push_key(SDL_SCANCODE_BACKSPACE, SDLK_BACKSPACE);
+
+  // then send the text, one UTF-8 codepoint per event
+  for (size_t i = 0; s[i];) {
+    const int cl = osk_utf8_len((unsigned char)s[i]);
+    SDL_Event e;
+    SDL_zero(e);
+    e.type = SDL_TEXTINPUT;
+    int k = 0;
+    for (; k < cl && s[i + k]; k++)
+      e.text.text[k] = s[i + k];
+    e.text.text[k] = '\0';
+    SDL_PushEvent(&e);
+    i += k ? k : 1;
+  }
+}
+
+static void SDL_StartTextInput_fake(void) {
+  static volatile bool busy = false;
+  if (busy) return;            // swkbdShow blocks, so this just guards re-entry
+  busy = true;
+
+  SwkbdConfig kbd;
+  if (R_FAILED(swkbdCreate(&kbd, 0))) { busy = false; return; }
+  swkbdConfigMakePresetDefault(&kbd);
+  swkbdConfigSetStringLenMax(&kbd, 255);
+
+  char out[256];
+  out[0] = '\0';
+  const Result rc = swkbdShow(&kbd, out, sizeof(out));
+  swkbdClose(&kbd);
+  busy = false;
+
+  if (R_SUCCEEDED(rc))         // OK -> replace field contents; Cancel -> leave it
+    osk_inject(out);
+}
+
 static SDL_GLContext SDL_GL_CreateContext_fake(SDL_Window *window) {
   SDL_GLContext ctx = SDL_GL_CreateContext(window);
   // context is current and the engine hasn't drawn yet: play the startup videos
@@ -1284,7 +1344,7 @@ DynLibFunction dynlib_functions[] = {
   { "SDL_ShowMessageBox", (uintptr_t)&SDL_ShowMessageBox },
   { "SDL_ShowSimpleMessageBox", (uintptr_t)&SDL_ShowSimpleMessageBox },
   { "SDL_ShowWindow", (uintptr_t)&SDL_ShowWindow },
-  { "SDL_StartTextInput", (uintptr_t)&SDL_StartTextInput },
+  { "SDL_StartTextInput", (uintptr_t)&SDL_StartTextInput_fake },
   { "SDL_WaitEventTimeout", (uintptr_t)&SDL_WaitEventTimeout },
   { "SDL_WarpMouseInWindow", (uintptr_t)&SDL_WarpMouseInWindow },
   { "SDL_WasInit", (uintptr_t)&SDL_WasInit },
