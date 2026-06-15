@@ -423,6 +423,15 @@ static int SDL_SetWindowFullscreen_fake(SDL_Window *window, Uint32 flags) {
   return 0;
 }
 
+// switch-sdl2 has no WM backend; the real call returns false and the engine
+// fatal-errors during video playback. Only the bool result is checked.
+static SDL_bool SDL_GetWindowWMInfo_fake(SDL_Window *window, SDL_SysWMinfo *info) {
+  (void)window;
+  if (info)
+    info->subsystem = SDL_SYSWM_UNKNOWN;
+  return SDL_TRUE;
+}
+
 static void SDL_GL_SwapWindow_fake(SDL_Window *window) {
   ++sdl_swap_count;
   apply_display_pass(window); // applies mat_monitorgamma ramp; no-op at default
@@ -848,6 +857,25 @@ DynLibFunction dynlib_functions[] = {
   { "__vsnprintf_chk", (uintptr_t)&__vsnprintf_chk_fake },
   { "__FD_SET_chk", (uintptr_t)&__FD_SET_chk_fake },
 
+  // --- v1.17.0025-only symbols (unused by v1.16; one binary loads either) ---
+  { "__FD_ISSET_chk", (uintptr_t)&__FD_ISSET_chk_fake },
+  { "__memset_chk", (uintptr_t)&__memset_chk_fake },
+  { "__read_chk", (uintptr_t)&__read_chk_fake },
+  { "__recvfrom_chk", (uintptr_t)&__recvfrom_chk_fake },
+  { "__snprintf_chk", (uintptr_t)&__snprintf_chk_fake },
+  { "__sprintf_chk", (uintptr_t)&__sprintf_chk_fake },
+  { "__vsprintf_chk", (uintptr_t)&__vsprintf_chk_fake },
+  { "__strncpy_chk2", (uintptr_t)&__strncpy_chk2_fake },
+  { "__strrchr_chk", (uintptr_t)&__strrchr_chk_fake },
+  { "syscall", (uintptr_t)&syscall_fake },
+  { "__ctype_get_mb_cur_max", (uintptr_t)&__ctype_get_mb_cur_max_fake },
+  { "_ctype_", (uintptr_t)&bionic_ctype },
+  { "__google_potentially_blocking_region_begin", (uintptr_t)&__google_potentially_blocking_region_begin_fake },
+  { "__google_potentially_blocking_region_end", (uintptr_t)&__google_potentially_blocking_region_end_fake },
+  { "isblank", (uintptr_t)&isblank },
+  { "ldexp", (uintptr_t)&ldexp },
+  { "wcsftime", (uintptr_t)&wcsftime },
+
   // --- dynamic loader ---
   { "dlopen", (uintptr_t)&dlopen_fake },
   { "dlsym", (uintptr_t)&dlsym_fake },
@@ -1212,7 +1240,7 @@ DynLibFunction dynlib_functions[] = {
   { "SDL_GetWindowGrab", (uintptr_t)&SDL_GetWindowGrab },
   { "SDL_GetWindowID", (uintptr_t)&SDL_GetWindowID },
   { "SDL_GetWindowSize", (uintptr_t)&SDL_GetWindowSize },
-  { "SDL_GetWindowWMInfo", (uintptr_t)&SDL_GetWindowWMInfo },
+  { "SDL_GetWindowWMInfo", (uintptr_t)&SDL_GetWindowWMInfo_fake },
   { "SDL_HapticClose", (uintptr_t)&SDL_HapticClose_fake },
   { "SDL_HapticOpenFromJoystick", (uintptr_t)&SDL_HapticOpenFromJoystick_fake },
   { "SDL_HapticRumbleInit", (uintptr_t)&SDL_HapticRumbleInit_fake },

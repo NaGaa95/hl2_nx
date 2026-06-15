@@ -81,9 +81,13 @@ char *__strncpy_chk_fake(char *dst, const char *src, size_t n, size_t dstlen) {
   return strncpy(dst, src, n);
 }
 
+// newlib vsnprintf tracks remaining space in a signed int, so fortify's SIZE_MAX
+// "unknown size" bound becomes -1 and it writes nothing. Clamp to INT_MAX.
+static size_t pf_bound(size_t n) { return n > 0x7fffffff ? (size_t)0x7fffffff : n; }
+
 int __vsnprintf_chk_fake(char *s, size_t maxlen, int flag, size_t slen, const char *fmt, va_list va) {
   (void)flag; (void)slen;
-  return vsnprintf(s, maxlen, fmt, va);
+  return vsnprintf(s, pf_bound(maxlen), fmt, va);
 }
 
 // bionic fd_set is 1024 bits of unsigned long
@@ -91,6 +95,62 @@ void __FD_SET_chk_fake(int fd, void *set, size_t set_size) {
   (void)set_size;
   if (fd >= 0 && fd < 1024)
     ((unsigned long *)set)[fd / 64] |= 1ul << (fd % 64);
+}
+
+int __FD_ISSET_chk_fake(int fd, const void *set, size_t set_size) {
+  (void)set_size;
+  if (fd >= 0 && fd < 1024)
+    return (int)((((const unsigned long *)set)[fd / 64] >> (fd % 64)) & 1ul);
+  return 0;
+}
+
+void *__memset_chk_fake(void *s, int c, size_t n, size_t slen) {
+  (void)slen;
+  return memset(s, c, n);
+}
+
+long __read_chk_fake(int fd, void *buf, size_t count, size_t buflen) {
+  (void)buflen;
+  return read(fd, buf, count);
+}
+
+long __recvfrom_chk_fake(int fd, void *buf, size_t len, size_t buflen,
+                         int flags, void *from, int *fromlen) {
+  (void)buflen;
+  return sock_recvfrom_fake(fd, buf, len, flags, from, fromlen);
+}
+
+int __snprintf_chk_fake(char *s, size_t n, int flag, size_t slen, const char *fmt, ...) {
+  (void)flag; (void)slen;
+  va_list va;
+  va_start(va, fmt);
+  int r = vsnprintf(s, pf_bound(n), fmt, va);
+  va_end(va);
+  return r;
+}
+
+int __sprintf_chk_fake(char *s, int flag, size_t slen, const char *fmt, ...) {
+  (void)flag;
+  va_list va;
+  va_start(va, fmt);
+  int r = vsnprintf(s, pf_bound(slen), fmt, va);
+  va_end(va);
+  return r;
+}
+
+int __vsprintf_chk_fake(char *s, int flag, size_t slen, const char *fmt, va_list va) {
+  (void)flag;
+  return vsnprintf(s, pf_bound(slen), fmt, va);
+}
+
+char *__strncpy_chk2_fake(char *dst, const char *src, size_t n, size_t dstlen, size_t srclen) {
+  (void)dstlen; (void)srclen;
+  return strncpy(dst, src, n);
+}
+
+char *__strrchr_chk_fake(const char *s, int c, size_t slen) {
+  (void)slen;
+  return strrchr(s, c);
 }
 
 // ---------------------------------------------------------------------------
@@ -101,6 +161,66 @@ int __system_property_get_fake(const char *name, char *value) {
   (void)name;
   value[0] = '\0';
   return 0;
+}
+
+// Clang-16 libtier0 builds its mutexes/events on raw futex; map onto the Switch
+// address arbiter. Everything else returns ENOSYS (nothing else uses syscall()).
+long syscall_fake(long number, ...) {
+  va_list va;
+  va_start(va, number);
+  if (number == 98) { // SYS_futex
+    int *uaddr = va_arg(va, int *);
+    const int op = va_arg(va, int) & 0x7f; // strip FUTEX_PRIVATE_FLAG/CLOCK
+    const int val = va_arg(va, int);
+    const struct timespec *ts = va_arg(va, const struct timespec *);
+    va_end(va);
+    if (op == 0 || op == 9) { // FUTEX_WAIT
+      const s64 timeout = ts ? ((s64)ts->tv_sec * 1000000000LL + ts->tv_nsec)
+                             : 1000000000LL; // re-check ~1/s when infinite
+      const Result rc = svcWaitForAddress(uaddr, ArbitrationType_WaitIfEqual, (s64)val, timeout);
+      if (R_SUCCEEDED(rc))
+        return 0;
+      errno = (R_VALUE(rc) == KERNELRESULT(TimedOut)) ? 110 : 11; // ETIMEDOUT : EAGAIN
+      return -1;
+    }
+    if (op == 1 || op == 10) { // FUTEX_WAKE
+      svcSignalToAddress(uaddr, SignalType_Signal, 0, val);
+      return val;
+    }
+    errno = 38;
+    return -1;
+  }
+  va_end(va);
+  errno = 38; // ENOSYS
+  return -1;
+}
+
+size_t __ctype_get_mb_cur_max_fake(void) {
+  return 1; // C locale, single byte
+}
+
+// bionic profiling hooks; no-ops here
+void __google_potentially_blocking_region_begin_fake(void) {}
+void __google_potentially_blocking_region_end_fake(void) {}
+
+// _ctype_ points at the base of a 257-byte BSD table (slot 0 = EOF, slot c+1 =
+// char c); libstdc++'s ctype facet reads classic_table() = (*_ctype_) + 1.
+static unsigned char g_ctype_table[1 + 256];
+const char *bionic_ctype = (const char *)g_ctype_table;
+
+__attribute__((constructor)) static void init_bionic_ctype(void) {
+  for (int c = 0; c < 256; c++) {
+    unsigned char f = 0;
+    if (isupper(c))            f |= 0x01;
+    if (islower(c))            f |= 0x02;
+    if (isdigit(c))            f |= 0x04;
+    if (isspace(c))            f |= 0x08;
+    if (ispunct(c))            f |= 0x10;
+    if (iscntrl(c))            f |= 0x20;
+    if (isxdigit(c))           f |= 0x40;
+    if (c == ' ' || c == '\t') f |= 0x80;
+    g_ctype_table[c + 1] = f;
+  }
 }
 
 unsigned long getauxval_fake(unsigned long type) {
@@ -216,13 +336,15 @@ int open_fake(const char *path, int flags, ...) {
     errno = ENOENT;
     return -1;
   }
-  return open(path, convert_open_flags(flags), mode);
+  int fd = open(path, convert_open_flags(flags), mode);
+  return fd;
 }
 
 int access_fake(const char *path, int mode) {
   (void)mode; // everything that exists is considered readable+writable
   struct stat st;
-  return stat(path, &st);
+  int r = stat(path, &st);
+  return r;
 }
 
 // devkitA64 getcwd() returns the path WITH a device prefix ("sdmc:/switch/
@@ -1294,7 +1416,8 @@ FILE *fopen_fake(const char *path, const char *mode) {
     if (!strncmp(path, "/proc/", 6) || !strncmp(path, "/sys/", 5) || !strncmp(path, "/dev/", 5))
       return NULL;
   }
-  return fopen(path, mode);
+  FILE *f = fopen(path, mode);
+  return f;
 }
 
 // ---------------------------------------------------------------------------

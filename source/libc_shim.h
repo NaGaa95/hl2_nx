@@ -48,9 +48,23 @@ char *__strncat_chk_fake(char *dst, const char *src, size_t n, size_t dstlen);
 char *__strncpy_chk_fake(char *dst, const char *src, size_t n, size_t dstlen);
 int __vsnprintf_chk_fake(char *s, size_t maxlen, int flag, size_t slen, const char *fmt, va_list va);
 void __FD_SET_chk_fake(int fd, void *set, size_t set_size);
+int __FD_ISSET_chk_fake(int fd, const void *set, size_t set_size);
+void *__memset_chk_fake(void *s, int c, size_t n, size_t slen);
+long __read_chk_fake(int fd, void *buf, size_t count, size_t buflen);
+long __recvfrom_chk_fake(int fd, void *buf, size_t len, size_t buflen, int flags, void *from, int *fromlen);
+int __snprintf_chk_fake(char *s, size_t n, int flag, size_t slen, const char *fmt, ...);
+int __sprintf_chk_fake(char *s, int flag, size_t slen, const char *fmt, ...);
+int __vsprintf_chk_fake(char *s, int flag, size_t slen, const char *fmt, va_list va);
+char *__strncpy_chk2_fake(char *dst, const char *src, size_t n, size_t dstlen, size_t srclen);
+char *__strrchr_chk_fake(const char *s, int c, size_t slen);
 
 // misc bionic
 int __system_property_get_fake(const char *name, char *value);
+long syscall_fake(long number, ...);
+size_t __ctype_get_mb_cur_max_fake(void);
+void __google_potentially_blocking_region_begin_fake(void);
+void __google_potentially_blocking_region_end_fake(void);
+extern const char *bionic_ctype; // bionic _ctype_ table pointer
 unsigned long getauxval_fake(unsigned long type);
 int gettid_fake(void);
 void android_set_abort_message_fake(const char *msg);

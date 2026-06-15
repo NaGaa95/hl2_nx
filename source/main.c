@@ -211,33 +211,42 @@ static void setup_game_environment(so_module *launcher) {
   setArgs(fake_env, NULL, cmdline);
 }
 
-// CPU clock manager: FastLoad (CPU 1785MHz, GPU floored) while the frame counter
-// is frozen -- boot and level loads, which are CPU-bound and GPU-idle, so they
-// finish faster. Drop to Normal (full GPU) once rendering is sustained, which is
-// what gameplay needs. Skipped while the intro video owns the screen.
+// CPU clock manager: FastLoad maxes the CPU but floors the GPU, so engage it only
+// during loads. A load goes near-frozen; boost when frames over a 3s window are
+// near zero, drop when they flow. Hysteresis keeps progress frames from flapping.
 extern volatile unsigned sdl_swap_count;
 extern volatile int g_video_playing;
 
+#define CLK_WIN_TICKS 12  // 3 s window (12 x 250 ms)
+#define CLK_BOOST_AT   5  // <= ~1.5 fps -> load -> FastLoad
+#define CLK_DROP_AT   12  // >  ~4 fps  -> Normal
+
 static void *clock_thread(void *arg) {
   (void)arg;
-  unsigned last_swap = 0;
-  int boosted = 1; // main() started us in FastLoad
-  int frozen_ticks = 0, render_ticks = 0;
+  unsigned ring[CLK_WIN_TICKS] = { 0 };
+  unsigned win_sum = 0;
+  unsigned last_swap = sdl_swap_count;
+  int ri = 0;
+  int boosted = 1;
 
   for (;;) {
     svcSleepThread(250000000ll); // 250 ms
-    if (g_video_playing)
+    if (g_video_playing) {
+      last_swap = sdl_swap_count; // don't count intro frames
       continue;
-    const unsigned cur_swap = sdl_swap_count;
-    if (cur_swap != last_swap) {                  // rendering this tick
-      last_swap = cur_swap;
-      frozen_ticks = 0;
-      // need ~1s of sustained rendering before dropping, so a lone progress
-      // frame during a load doesn't toggle the clock
-      if (boosted && ++render_ticks >= 4) { cpu_boost(0); boosted = 0; render_ticks = 0; }
-    } else {                                      // frozen this tick
-      render_ticks = 0;
-      if (!boosted && ++frozen_ticks >= 2) { cpu_boost(1); boosted = 1; frozen_ticks = 0; }
+    }
+
+    const unsigned cur = sdl_swap_count;
+    win_sum -= ring[ri];
+    ring[ri] = cur - last_swap;
+    win_sum += ring[ri];
+    ri = (ri + 1) % CLK_WIN_TICKS;
+    last_swap = cur;
+
+    if (boosted) {
+      if (win_sum > CLK_DROP_AT) { cpu_boost(0); boosted = 0; }
+    } else {
+      if (win_sum <= CLK_BOOST_AT) { cpu_boost(1); boosted = 1; }
     }
   }
   return NULL;
