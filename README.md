@@ -20,6 +20,7 @@ To install, create `/switch/hl2_nx/` on your SD card and lay it out like this:
 /switch/hl2_nx/
   hl2_nx.nro
   lib/                  <- all 27 .so files from the APK's lib/arm64-v8a/
+  lib/episodic/         <- EP1/EP2 libclient.so and libserver.so from the episodic APK
   assets/extras_dir.vpk <- from the APK's assets/
   files/                <- the fonts from the APK's assets/ (dejavusans.ttf,
                            dejavusans-bold.ttf, DroidSansFallback.ttf,
@@ -30,6 +31,8 @@ To install, create `/switch/hl2_nx/` on your SD card and lay it out like this:
   platform/             <- from the game data
 ```
 
+Episode One / Two need episodic `libclient.so` and `libserver.so` in `lib/episodic/` from [HERE](https://nc.workbench.network/s/gdRnpcc2zrXz5Xg/download?path=%2F&files=episodic-1.06_96.apk).
+
 ### Notes
 
 This will not work in applet/album mode — use a game override (hold R on a title) or a forwarder.
@@ -38,13 +41,15 @@ The Switch needs the full application memory pool
 A `config.txt` is created next to the nro on first run:
 * `screen_width` / `screen_height` — passed as `-w`/`-h` when both set; `-1` lets the engine pick
 * `gamedir` — game to launch: `hl2` (default), `episodic` (Episode One), or `ep2` (Episode Two)
-* `args` — extra Source command line (default `-console`)
-* `lang` — `LANG` environment value (default `en_US`)
+* `args` — extra Source command line
+* `lang` — Source language name (default `english`)
+
 
 ### How to build
 
 You need devkitA64 plus the following pacman packages:
 * `switch-sdl2`
+* `switch-sdl2_image`
 * `switch-mesa`
 * `switch-libdrm_nouveau`
 * `switch-zlib`
@@ -54,6 +59,7 @@ You need devkitA64 plus the following pacman packages:
 
 * nillerusr for the Android Source engine port this wraps
 * TheOfficialFloW & fgsfds for the so-loader lineage
+* Masagrator for the hl2_picker
 
 ### Support
 

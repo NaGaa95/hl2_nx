@@ -19,11 +19,12 @@ include $(DEVKITPRO)/libnx/switch_rules
 TARGET		:=	$(notdir $(CURDIR))
 APP_TITLE	:=	Half-Life 2
 APP_AUTHOR	:=	naga
-APP_VERSION	:=	1.0.0
+APP_VERSION	:=	1.0.1
 BUILD		:=	build
 SOURCES		:=	source
 DATA		:=	data
 INCLUDES	:=	include
+ROMFS		:=	romfs
 
 #---------------------------------------------------------------------------------
 # options for code generation
@@ -45,7 +46,8 @@ LDFLAGS	=	-specs=$(DEVKITPRO)/libnx/switch.specs -g $(ARCH) -Wl,-Map,$(notdir $*
 # pseudo-modules togl resolves GL entry points from.
 # switch-ffmpeg decodes the startup videos (Valve logo / Bink); its libs have
 # circular deps so wrap them in a link group. bz2/dav1d are avcodec deps.
-LIBS	:= -lSDL2 -lEGL -lGLESv2 -lglapi -ldrm_nouveau \
+LIBS	:= -lSDL2_image -ljpeg -lpng -lwebp \
+		-lSDL2 -lEGL -lGLESv2 -lglapi -ldrm_nouveau \
 		-Wl,--start-group -lavformat -lavcodec -lswscale -lswresample -lavutil -lbz2 -ldav1d -Wl,--end-group \
 		-lz -lnx -lm
 
@@ -111,6 +113,10 @@ endif
 
 ifeq ($(strip $(NO_NACP)),)
 	export NROFLAGS += --nacp=$(CURDIR)/$(TARGET).nacp
+endif
+
+ifneq ($(ROMFS),)
+	export NROFLAGS += --romfsdir=$(CURDIR)/$(ROMFS)
 endif
 
 ifneq ($(APP_TITLEID),)

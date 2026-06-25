@@ -434,15 +434,11 @@ static SDL_bool SDL_GetWindowWMInfo_fake(SDL_Window *window, SDL_SysWMinfo *info
 
 static void SDL_GL_SwapWindow_fake(SDL_Window *window) {
   ++sdl_swap_count;
-  apply_display_pass(window); // applies mat_monitorgamma ramp; no-op at default
+  apply_display_pass(window);
   SDL_GL_SwapWindow(window);
 }
 
-// The engine handles touch natively (inputsystem TouchSDLWatcher ->
-// CInputSystem::FingerEvent), which drives the VGUI menu. We keep SDL's own
-// touch-mouse off (env var in main.c) so it doesn't lay a second, drifting touch
-// source on top (which doubled every menu tap), and defensively drop any
-// touch-synthesized mouse events SDL might still emit.
+// Source handles touch itself; drop SDL touch-to-mouse duplicates.
 static int SDL_PollEvent_fake(SDL_Event *event) {
   for (;;) {
     const int r = SDL_PollEvent(event);
@@ -465,16 +461,13 @@ static int SDL_PollEvent_fake(SDL_Event *event) {
   }
 }
 
-// force SDL's touch-mouse off (see SDL_PollEvent_fake)
 static SDL_bool SDL_SetHint_fake(const char *name, const char *value) {
   if (name && !strcmp(name, "SDL_TOUCH_MOUSE_EVENTS"))
     value = "0";
   return SDL_SetHint(name, value);
 }
 
-// Replaces SDL_StartTextInput: run the libnx swkbd, then inject a Backspace clear
-// + the typed text as events (engine reads them back via SDL_AddEventWatch). Fixes
-// switch-sdl2 dropping the first char and appending instead of replacing the field.
+// Feed libnx swkbd text back through SDL events.
 static void osk_push_key(SDL_Scancode sc, SDL_Keycode kc) {
   SDL_Event e;
   SDL_zero(e);
@@ -493,11 +486,9 @@ static int osk_utf8_len(unsigned char c) {
 }
 
 static void osk_inject(const char *s) {
-  // clear the field first so typing replaces, not appends (extra Backspaces no-op)
   for (int i = 0; i < 64; i++)
     osk_push_key(SDL_SCANCODE_BACKSPACE, SDLK_BACKSPACE);
 
-  // then send the text, one UTF-8 codepoint per event
   for (size_t i = 0; s[i];) {
     const int cl = osk_utf8_len((unsigned char)s[i]);
     SDL_Event e;
@@ -514,7 +505,7 @@ static void osk_inject(const char *s) {
 
 static void SDL_StartTextInput_fake(void) {
   static volatile bool busy = false;
-  if (busy) return;            // swkbdShow blocks, so this just guards re-entry
+  if (busy) return;
   busy = true;
 
   SwkbdConfig kbd;
@@ -528,14 +519,12 @@ static void SDL_StartTextInput_fake(void) {
   swkbdClose(&kbd);
   busy = false;
 
-  if (R_SUCCEEDED(rc))         // OK -> replace field contents; Cancel -> leave it
+  if (R_SUCCEEDED(rc))
     osk_inject(out);
 }
 
 static SDL_GLContext SDL_GL_CreateContext_fake(SDL_Window *window) {
   SDL_GLContext ctx = SDL_GL_CreateContext(window);
-  // context is current and the engine hasn't drawn yet: play the startup videos
-  // (Valve logo), blocking until done/skipped
   static int startup_videos_done;
   if (ctx && !startup_videos_done) {
     startup_videos_done = 1;
@@ -544,74 +533,68 @@ static SDL_GLContext SDL_GL_CreateContext_fake(SDL_Window *window) {
   return ctx;
 }
 
-// present-blit sRGB fix (the dark-rendering fix).
-//
-// The engine renders into an offscreen sRGB texture and presents it with
-// glBlitFramebuffer onto the default FB (appframework/sdlmgr.cpp ShowPixels).
-// On Android the default FB is sRGB (EGL_KHR_gl_colorspace), so the blit lands
-// correct; switch-mesa's EGL doesn't advertise that extension, so SDL hands back
-// a LINEAR default FB while the engine leaves GL_FRAMEBUFFER_SRGB on -- the blit
-// converts the sRGB source down to linear and the panel shows it far too dark.
-// We intercept the present blit (draw FB == 0) and pick the sRGB-conversion
-// state from the real source/destination encodings so the result is correct.
+// Switch presents through a linear default FB; keep Source's sRGB bytes intact.
 #ifndef GL_FRAMEBUFFER_SRGB
 #define GL_FRAMEBUFFER_SRGB 0x8DB9 /* GL_FRAMEBUFFER_SRGB_EXT (sRGB_write_control) */
-#endif
-#ifndef GL_FRAMEBUFFER_ATTACHMENT_COLOR_ENCODING
-#define GL_FRAMEBUFFER_ATTACHMENT_COLOR_ENCODING 0x8210
 #endif
 
 static void (*p_glBlitFramebuffer)(GLint, GLint, GLint, GLint, GLint, GLint,
                                    GLint, GLint, GLbitfield, GLenum);
+static void (*p_glBlitFramebufferEXT)(GLint, GLint, GLint, GLint, GLint, GLint,
+                                      GLint, GLint, GLbitfield, GLenum);
+
+static void blit_to_default_no_srgb(void (*blit)(GLint, GLint, GLint, GLint,
+                                                 GLint, GLint, GLint, GLint,
+                                                 GLbitfield, GLenum),
+                                    GLint sx0, GLint sy0, GLint sx1, GLint sy1,
+                                    GLint dx0, GLint dy0, GLint dx1, GLint dy1,
+                                    GLbitfield mask, GLenum filter) {
+  GLint drawfb = -1;
+  glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &drawfb);
+  if (drawfb != 0) {
+    blit(sx0, sy0, sx1, sy1, dx0, dy0, dx1, dy1, mask, filter);
+    return;
+  }
+
+  const GLboolean wasSRGB = glIsEnabled(GL_FRAMEBUFFER_SRGB);
+  if (wasSRGB)
+    glDisable(GL_FRAMEBUFFER_SRGB);
+
+  blit(sx0, sy0, sx1, sy1, dx0, dy0, dx1, dy1, mask, filter);
+
+  if (wasSRGB)
+    glEnable(GL_FRAMEBUFFER_SRGB);
+}
 
 static void glBlitFramebuffer_fake(GLint sx0, GLint sy0, GLint sx1, GLint sy1,
                                    GLint dx0, GLint dy0, GLint dx1, GLint dy1,
                                    GLbitfield mask, GLenum filter) {
-  GLint drawfb = -1;
-  glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &drawfb);
-  if (drawfb != 0) { // not the present blit: pass straight through
-    p_glBlitFramebuffer(sx0, sy0, sx1, sy1, dx0, dy0, dx1, dy1, mask, filter);
-    return;
-  }
-
-  GLint srcEnc = 0, dstEnc = 0;
-  glGetFramebufferAttachmentParameteriv(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                                        GL_FRAMEBUFFER_ATTACHMENT_COLOR_ENCODING, &srcEnc);
-  glGetFramebufferAttachmentParameteriv(GL_DRAW_FRAMEBUFFER, GL_BACK,
-                                        GL_FRAMEBUFFER_ATTACHMENT_COLOR_ENCODING, &dstEnc);
-  const GLboolean wasSRGB = glIsEnabled(GL_FRAMEBUFFER_SRGB);
-
-  // want sRGB conversion ON only when encodings differ in the encode direction
-  int wantSRGB = wasSRGB;
-  if (srcEnc == GL_SRGB && dstEnc != GL_SRGB)
-    wantSRGB = 0; // verbatim copy of sRGB bytes into the linear default FB
-  else if (srcEnc != GL_SRGB && dstEnc == GL_SRGB)
-    wantSRGB = 1; // encode linear -> sRGB on write
-
-  if (wantSRGB && !wasSRGB) glEnable(GL_FRAMEBUFFER_SRGB);
-  else if (!wantSRGB && wasSRGB) glDisable(GL_FRAMEBUFFER_SRGB);
-
-  p_glBlitFramebuffer(sx0, sy0, sx1, sy1, dx0, dy0, dx1, dy1, mask, filter);
-
-  if (wasSRGB) glEnable(GL_FRAMEBUFFER_SRGB);
-  else glDisable(GL_FRAMEBUFFER_SRGB);
+  blit_to_default_no_srgb(p_glBlitFramebuffer, sx0, sy0, sx1, sy1,
+                          dx0, dy0, dx1, dy1, mask, filter);
 }
 
-// GL entry points are resolved by the engine through eglGetProcAddress (see
-// dl_emu.c); intercept it so the present blit routes through our hook. Anything
-// else passes straight to mesa.
+static void glBlitFramebufferEXT_fake(GLint sx0, GLint sy0, GLint sx1, GLint sy1,
+                                      GLint dx0, GLint dy0, GLint dx1, GLint dy1,
+                                      GLbitfield mask, GLenum filter) {
+  blit_to_default_no_srgb(p_glBlitFramebufferEXT, sx0, sy0, sx1, sy1,
+                          dx0, dy0, dx1, dy1, mask, filter);
+}
+
 void *eglGetProcAddress_fake(const char *name) {
   if (name && !strcmp(name, "glBlitFramebuffer")) {
     if (!p_glBlitFramebuffer)
       p_glBlitFramebuffer = (void *)eglGetProcAddress(name);
     return (void *)&glBlitFramebuffer_fake;
   }
+  if (name && !strcmp(name, "glBlitFramebufferEXT")) {
+    if (!p_glBlitFramebufferEXT)
+      p_glBlitFramebufferEXT = (void *)eglGetProcAddress(name);
+    return (void *)&glBlitFramebufferEXT_fake;
+  }
   return (void *)eglGetProcAddress(name);
 }
 
-// Applies the engine's gamma ramp (mat_monitorgamma) as a fullscreen LUT pass,
-// since switch-sdl2 ignores SDL_SetWindowGammaRamp. Skipped while the ramp is
-// identity (the default), so the frame is untouched until the convar is changed.
+// switch-sdl2 ignores SDL_SetWindowGammaRamp; apply non-identity ramps here.
 static Uint16 g_gamma_r[256], g_gamma_g[256], g_gamma_b[256];
 static volatile int g_gamma_have_ramp;
 static volatile int g_gamma_ramp_dirty;
@@ -625,7 +608,7 @@ static int SDL_SetWindowGammaRamp_fake(SDL_Window *window, const Uint16 *r, cons
     memcpy(g_gamma_b, b, sizeof(g_gamma_b));
     g_gamma_have_ramp = 1;
     g_gamma_ramp_dirty = 1;
-    int ident = 1; // identity until the in-game slider moves
+    int ident = 1;
     for (int i = 0; i < 256; i++) {
       if (abs((g_gamma_r[i] >> 8) - i) > 1 ||
           abs((g_gamma_g[i] >> 8) - i) > 1 ||
@@ -633,7 +616,7 @@ static int SDL_SetWindowGammaRamp_fake(SDL_Window *window, const Uint16 *r, cons
     }
     g_gamma_identity = ident;
   }
-  return 0; // pretend success; the present pass applies it
+  return 0;
 }
 
 static GLuint gamma_prog, gamma_vao, gamma_scene_tex, gamma_lut_tex;
@@ -675,7 +658,7 @@ static int gamma_init(void) {
     "           texture(uLut, vec2(c.g, 0.5)).g,\n"
     "           texture(uLut, vec2(c.b, 0.5)).b);\n"
     "  float n1 = h(gl_FragCoord.xy), n2 = h(gl_FragCoord.xy + vec2(13.0, 7.0));\n"
-    "  c += vec3((n1 + n2 - 1.0) * (1.0/255.0)); // dither so the 8-bit LUT doesn't band\n"
+    "  c += vec3((n1 + n2 - 1.0) * (1.0/255.0));\n"
     "  o = vec4(clamp(c, 0.0, 1.0), 1.0);\n"
     "}\n";
   gamma_prog = glCreateProgram();
@@ -704,7 +687,6 @@ static int gamma_init(void) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
   }
-  // LUT starts as identity, so the pass is a no-op until a real ramp arrives
   uint8_t idlut[256 * 4];
   for (int i = 0; i < 256; i++) {
     idlut[i * 4 + 0] = idlut[i * 4 + 1] = idlut[i * 4 + 2] = (uint8_t)i;
@@ -729,8 +711,6 @@ static void gamma_upload_lut(void) {
 }
 
 static void apply_display_pass(SDL_Window *window) {
-  // only runs when the engine's gamma ramp (mat_monitorgamma) is non-identity;
-  // at the default it's identity, so this is skipped and the frame is untouched
   if (g_gamma_identity)
     return;
   if (!gamma_inited && !gamma_init())
@@ -740,7 +720,6 @@ static void apply_display_pass(SDL_Window *window) {
   SDL_GL_GetDrawableSize(window, &w, &h);
   if (w <= 0 || h <= 0) { w = screen_width; h = screen_height; }
 
-  // save the engine's GL state we touch
   GLint prevProg = 0, prevVAO = 0, prevActive = 0, prevFBO = 0, prevTex0 = 0, prevTex1 = 0, vp[4];
   glGetIntegerv(GL_CURRENT_PROGRAM, &prevProg);
   glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &prevVAO);
@@ -750,6 +729,7 @@ static void apply_display_pass(SDL_Window *window) {
   const GLboolean bDepth = glIsEnabled(GL_DEPTH_TEST), bBlend = glIsEnabled(GL_BLEND),
                   bCull = glIsEnabled(GL_CULL_FACE), bScissor = glIsEnabled(GL_SCISSOR_TEST),
                   bStencil = glIsEnabled(GL_STENCIL_TEST);
+  const GLboolean bSRGB = glIsEnabled(GL_FRAMEBUFFER_SRGB);
   GLboolean cmask[4];
   glGetBooleanv(GL_COLOR_WRITEMASK, cmask);
 
@@ -759,7 +739,6 @@ static void apply_display_pass(SDL_Window *window) {
   glActiveTexture(GL_TEXTURE0);
   glGetIntegerv(GL_TEXTURE_BINDING_2D, &prevTex0);
 
-  // grab the just-presented frame (already sRGB-encoded)
   glBindTexture(GL_TEXTURE_2D, gamma_scene_tex);
   if (w != gamma_tex_w || h != gamma_tex_h) {
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
@@ -771,6 +750,7 @@ static void apply_display_pass(SDL_Window *window) {
 
   glDisable(GL_DEPTH_TEST); glDisable(GL_BLEND); glDisable(GL_CULL_FACE);
   glDisable(GL_SCISSOR_TEST); glDisable(GL_STENCIL_TEST);
+  glDisable(GL_FRAMEBUFFER_SRGB);
   glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
   glViewport(0, 0, w, h);
 
@@ -780,7 +760,6 @@ static void apply_display_pass(SDL_Window *window) {
   glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, gamma_lut_tex); glUniform1i(gamma_u_lut, 1);
   glDrawArrays(GL_TRIANGLES, 0, 3);
 
-  // restore engine state
   glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, prevTex1);
   glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, prevTex0);
   glActiveTexture(prevActive);
@@ -793,20 +772,15 @@ static void apply_display_pass(SDL_Window *window) {
   if (bCull) glEnable(GL_CULL_FACE);
   if (bScissor) glEnable(GL_SCISSOR_TEST);
   if (bStencil) glEnable(GL_STENCIL_TEST);
+  if (bSRGB) glEnable(GL_FRAMEBUFFER_SRGB);
   glColorMask(cmask[0], cmask[1], cmask[2], cmask[3]);
 }
 
-// controller vibration (HD rumble).
-//
-// The engine drives rumble through SDL_Haptic (joystick_sdl.cpp), but
-// switch-sdl2's haptic subsystem reports 0 devices, so it would disable rumble
-// entirely. We replace those calls and drive libnx's HD rumble directly: a
-// non-NULL fake SDL_Haptic* satisfies the engine's NULL check, and Play/Stop
-// map to hidSendVibrationValues on the active npad.
+// SDL_Haptic is missing in switch-sdl2; drive libnx rumble directly.
 static HidVibrationDeviceHandle g_vib_handheld[2];
 static HidVibrationDeviceHandle g_vib_player1[2];
 static int g_vib_handheld_ok, g_vib_player1_ok, g_vib_init_done;
-static int g_haptic_sentinel; // its address is the opaque fake SDL_Haptic*
+static int g_haptic_sentinel;
 
 static void vib_init(void) {
   if (g_vib_init_done) return;
@@ -824,8 +798,6 @@ static void vib_send(float amp) {
   v.amp_low = amp;  v.freq_low = 160.0f;
   v.amp_high = amp; v.freq_high = 320.0f;
   HidVibrationValue vals[2] = { v, v };
-  // route to whichever device is currently connected: handheld in tabletop/
-  // handheld mode, else the player-1 controller (Pro / docked)
   if (g_vib_handheld_ok && (hidGetNpadStyleSet(HidNpadIdType_Handheld) & HidNpadStyleTag_NpadHandheld))
     hidSendVibrationValues(g_vib_handheld, vals, 2);
   else if (g_vib_player1_ok)
@@ -835,11 +807,11 @@ static void vib_send(float amp) {
 static SDL_Haptic *SDL_HapticOpenFromJoystick_fake(SDL_Joystick *joystick) {
   (void)joystick;
   vib_init();
-  return (SDL_Haptic *)&g_haptic_sentinel; // non-NULL: engine enables rumble
+  return (SDL_Haptic *)&g_haptic_sentinel;
 }
 static int SDL_HapticRumbleInit_fake(SDL_Haptic *h) { (void)h; return 0; }
 static int SDL_HapticRumblePlay_fake(SDL_Haptic *h, float strength, Uint32 length) {
-  (void)h; (void)length; // continuous until Stop (engine passes SDL_HAPTIC_INFINITY)
+  (void)h; (void)length;
   vib_send(strength);
   return 0;
 }

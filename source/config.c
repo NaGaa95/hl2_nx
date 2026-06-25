@@ -18,11 +18,14 @@
   CONFIG_VAR_INT(screen_height); \
   CONFIG_VAR_STR(gamedir); \
   CONFIG_VAR_STR(args); \
-  CONFIG_VAR_STR(lang);
+  CONFIG_VAR_STR(lang); \
+  CONFIG_VAR_INT(show_fps); \
+  CONFIG_VAR_INT(gamepad); \
+  CONFIG_VAR_INT(touch_hud); \
+  CONFIG_VAR_INT(console);
 
 Config config;
 
-// actual screen size that is in use right now
 int screen_width = 1280;
 int screen_height = 720;
 
@@ -30,6 +33,50 @@ static void strlcpy_(char *dst, const char *src, size_t size) {
   if (!size) return;
   strncpy(dst, src, size - 1);
   dst[size - 1] = '\0';
+}
+
+static int lang_equal(const char *a, const char *b) {
+  while (*a && *b) {
+    if (tolower((unsigned char)*a) != tolower((unsigned char)*b))
+      return 0;
+    a++;
+    b++;
+  }
+  return *a == *b;
+}
+
+static void normalize_lang(void) {
+  static const struct {
+    const char *from;
+    const char *to;
+  } aliases[] = {
+    { "en_US", "english" }, { "en-US", "english" },
+    { "de_DE", "german" }, { "fr_FR", "french" },
+    { "it_IT", "italian" }, { "es_ES", "spanish" },
+    { "ko_KR", "koreana" }, { "zh_CN", "schinese" },
+    { "zh_TW", "tchinese" }, { "ru_RU", "russian" },
+    { "th_TH", "thai" }, { "ja_JP", "japanese" },
+    { "pt_PT", "portuguese" }, { "pl_PL", "polish" },
+    { "da_DK", "danish" }, { "nl_NL", "dutch" },
+    { "fi_FI", "finnish" }, { "no_NO", "norwegian" },
+    { "nb_NO", "norwegian" }, { "sv_SE", "swedish" },
+    { "ro_RO", "romanian" }, { "tr_TR", "turkish" },
+    { "hu_HU", "hungarian" }, { "cs_CZ", "czech" },
+    { "pt_BR", "brazilian" }, { "bg_BG", "bulgarian" },
+    { "el_GR", "greek" }, { "uk_UA", "ukrainian" },
+  };
+
+  if (!config.lang[0]) {
+    strlcpy_(config.lang, "english", sizeof(config.lang));
+    return;
+  }
+
+  for (unsigned i = 0; i < sizeof(aliases) / sizeof(*aliases); i++) {
+    if (lang_equal(config.lang, aliases[i].from)) {
+      strlcpy_(config.lang, aliases[i].to, sizeof(config.lang));
+      return;
+    }
+  }
 }
 
 static inline void parse_var(const char *name, const char *value) {
@@ -44,41 +91,41 @@ int read_config(const char *file) {
   char line[1024] = { 0 };
 
   memset(&config, 0, sizeof(Config));
-  config.screen_width = -1; // auto
+  config.screen_width = -1;
   config.screen_height = -1;
   strlcpy_(config.install_root, DEFAULT_INSTALL_ROOT, sizeof(config.install_root));
   strlcpy_(config.gamedir, "hl2", sizeof(config.gamedir));
-  strlcpy_(config.args, "-console", sizeof(config.args));
-  strlcpy_(config.lang, "en_US", sizeof(config.lang));
+  strlcpy_(config.args, "", sizeof(config.args));
+  strlcpy_(config.lang, "english", sizeof(config.lang));
+  config.show_fps = 0;
+  config.gamepad = 1;
+  config.touch_hud = 0;
+  config.console = 1;
 
   FILE *f = fopen(file, "r");
   if (f == NULL)
     return -1;
 
-  // parse lines of the forms
-  // <spaces> # <whatever> \n
-  // <spaces> NAME <spaces> VALUE <spaces> \n
   do {
     char *name = NULL, *value = NULL, *tmp = NULL;
     if (fgets(line, sizeof(line), f) != NULL) {
       name = line;
-      // trim name
       while (*name && isspace((int)*name)) ++name;
-      if (name[0] == '#') continue; // skip comments
+      if (name[0] == '#') continue;
       for (tmp = name; *tmp && !isspace((int)*tmp); ++tmp);
-      // if tmp points to the end of the string, there's no value to parse
       if (*tmp != 0) {
         *tmp = 0;
-        // value is next; trim value
         for (value = tmp + 1; *value && isspace((int)*value); ++value);
-        for (tmp = value + strlen(value) - 1; isspace((int)*tmp); --tmp) *tmp = 0;
-        // got key value pair
-        parse_var(name, value);
+        for (tmp = value + strlen(value); tmp > value && isspace((int)*(tmp - 1)); --tmp)
+          *(tmp - 1) = 0;
+        if (*value)
+          parse_var(name, value);
       }
     }
   } while (!feof(f));
 
   fclose(f);
+  normalize_lang();
 
   return 0;
 }

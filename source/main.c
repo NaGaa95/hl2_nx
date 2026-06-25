@@ -22,6 +22,7 @@
 #include "imports.h"
 #include "libc_shim.h"
 #include "jni_fake.h"
+#include "picker.h"
 
 static void *heap_so_base = NULL;
 static size_t heap_so_limit = 0;
@@ -109,6 +110,81 @@ static void set_screen_size(void) {
   }
 }
 
+static int is_episodic_game(void) {
+  return !strcmp(config.gamedir, "episodic") || !strcmp(config.gamedir, "ep2");
+}
+
+static int is_regular_file(const char *path) {
+  struct stat st;
+  return stat(path, &st) == 0 && S_ISREG(st.st_mode);
+}
+
+static int file_contains_text(const char *path, const char *needle) {
+  unsigned char buf[8192];
+  size_t needle_len = strlen(needle);
+  size_t keep = 0;
+  FILE *f;
+
+  if (needle_len == 0 || needle_len >= sizeof(buf))
+    return 0;
+
+  f = fopen(path, "rb");
+  if (!f)
+    return 0;
+
+  for (;;) {
+    size_t got = fread(buf + keep, 1, sizeof(buf) - keep, f);
+    size_t total = keep + got;
+
+    if (total >= needle_len) {
+      for (size_t i = 0; i <= total - needle_len; i++) {
+        if (!memcmp(buf + i, needle, needle_len)) {
+          fclose(f);
+          return 1;
+        }
+      }
+    }
+
+    if (got == 0)
+      break;
+
+    keep = total < needle_len - 1 ? total : needle_len - 1;
+    memmove(buf, buf + total - keep, keep);
+  }
+
+  fclose(f);
+  return 0;
+}
+
+static const char *episodic_lib_dir(void) {
+  static int checked = -1;
+
+  if (checked < 0) {
+    checked = is_regular_file("lib/episodic/libclient.so") &&
+              file_contains_text("lib/episodic/libserver.so", "sk_zombie_soldier_health");
+  }
+
+  if (checked)
+    return "lib/episodic";
+
+  return NULL;
+}
+
+static const char *module_load_path(const char *name, char *path, size_t size) {
+  if (is_episodic_game() &&
+      (!strcmp(name, "libclient.so") || !strcmp(name, "libserver.so"))) {
+    const char *dir = episodic_lib_dir();
+    if (!dir)
+      fatal_error("Episode One/Two need\n%s/lib/episodic/libclient.so\n%s/lib/episodic/libserver.so",
+                  config.install_root, config.install_root);
+    snprintf(path, size, "%s/%s", dir, name);
+    return path;
+  }
+
+  snprintf(path, size, "lib/%s", name);
+  return path;
+}
+
 static void check_syscalls(void) {
   if (!envIsSyscallHinted(0x77))
     fatal_error("svcMapProcessCodeMemory is unavailable.\nRun with a full title override, not applet mode.");
@@ -150,8 +226,9 @@ static void load_modules(void) {
 
   // pass 1: load everything so cross-module resolution sees all exports
   for (unsigned int i = 0; i < NUM_MODULES; i++) {
-    snprintf(path, sizeof(path), "lib/%s", module_names[i]);
-    const int res = so_load(&modules[i], path, base, remaining);
+    const int res = so_load(&modules[i],
+                            module_load_path(module_names[i], path, sizeof(path)),
+                            base, remaining);
     if (res < 0)
       fatal_error("Could not load\n%s\n(so_load: %d)", path, res);
     base = (void *)ALIGN_MEM((uintptr_t)base + modules[i].load_size, 0x1000);
@@ -175,31 +252,162 @@ static void load_modules(void) {
   }
 }
 
-// mirrors ValveActivity2.initNatives: env vars, then the command line through
-// the launcher's setArgs JNI export (LauncherMainAndroid tokenizes it into argv)
+static void append_arg(char *dst, size_t dst_size, const char *arg) {
+  size_t len;
+  size_t arg_len;
+
+  if (!dst_size || !arg || !arg[0])
+    return;
+
+  len = strlen(dst);
+  if (len >= dst_size - 1)
+    return;
+
+  if (len > 0) {
+    dst[len++] = ' ';
+    dst[len] = '\0';
+  }
+
+  arg_len = strlen(arg);
+  if (arg_len >= dst_size - len)
+    arg_len = dst_size - len - 1;
+  memcpy(dst + len, arg, arg_len);
+  dst[len + arg_len] = '\0';
+}
+
+static void append_int_arg(char *dst, size_t dst_size, int value) {
+  char buf[16];
+  snprintf(buf, sizeof(buf), "%d", value);
+  append_arg(dst, dst_size, buf);
+}
+
+static int option_arg_takes_value(const char *arg) {
+  return !strcmp(arg, "+joystick") ||
+         !strcmp(arg, "joystick") ||
+         !strcmp(arg, "+touch_enable") ||
+         !strcmp(arg, "touch_enable") ||
+         !strcmp(arg, "+cl_showfps") ||
+         !strcmp(arg, "cl_showfps") ||
+         !strcmp(arg, "-language") ||
+         !strcmp(arg, "-audiolanguage");
+}
+
+static int option_arg_is_managed(const char *arg) {
+  return !strcmp(arg, "-console") || option_arg_takes_value(arg);
+}
+
+static void append_user_args(char *dst, size_t dst_size, const char *args) {
+  char buf[256];
+  char *tok;
+  int skip_next = 0;
+
+  if (!args || !args[0])
+    return;
+
+  snprintf(buf, sizeof(buf), "%s", args);
+  tok = strtok(buf, " \t\r\n");
+  while (tok) {
+    if (skip_next) {
+      skip_next = 0;
+    } else if (option_arg_is_managed(tok)) {
+      skip_next = option_arg_takes_value(tok);
+    } else {
+      append_arg(dst, dst_size, tok);
+    }
+    tok = strtok(NULL, " \t\r\n");
+  }
+}
+
+static const char *language_env_name(const char *lang) {
+  static const struct {
+    const char *name;
+    const char *env;
+  } langs[] = {
+    { "english", "en_US" },
+    { "german", "de_DE" },
+    { "french", "fr_FR" },
+    { "italian", "it_IT" },
+    { "spanish", "es_ES" },
+    { "koreana", "ko_KR" },
+    { "schinese", "zh_CN" },
+    { "tchinese", "zh_TW" },
+    { "russian", "ru_RU" },
+    { "thai", "th_TH" },
+    { "japanese", "ja_JP" },
+    { "portuguese", "pt_PT" },
+    { "polish", "pl_PL" },
+    { "danish", "da_DK" },
+    { "dutch", "nl_NL" },
+    { "finnish", "fi_FI" },
+    { "norwegian", "no_NO" },
+    { "swedish", "sv_SE" },
+    { "romanian", "ro_RO" },
+    { "turkish", "tr_TR" },
+    { "hungarian", "hu_HU" },
+    { "czech", "cs_CZ" },
+    { "brazilian", "pt_BR" },
+    { "bulgarian", "bg_BG" },
+    { "greek", "el_GR" },
+    { "ukrainian", "uk_UA" },
+  };
+
+  for (unsigned i = 0; i < sizeof(langs) / sizeof(*langs); i++) {
+    if (!strcmp(lang, langs[i].name))
+      return langs[i].env;
+  }
+  return "en_US";
+}
+
 static void setup_game_environment(so_module *launcher) {
   static char extras_path[384];
   static char lib_path[384];
+  static char mod_lib_path[384];
   static char cmdline[640];
+  const int episodic_game = is_episodic_game();
+  const char *mod_lib_dir = episodic_game ? episodic_lib_dir() : NULL;
 
   snprintf(extras_path, sizeof(extras_path), "%s/assets/extras_dir.vpk", config.install_root);
   snprintf(lib_path, sizeof(lib_path), "%s/lib", config.install_root);
 
   setenv("APP_DATA_PATH", config.install_root, 1);
   setenv("APP_LIB_PATH", lib_path, 1);
-  setenv("VALVE_GAME_PATH", config.install_root, 1); // LauncherMain chdir()s here
+  if (mod_lib_dir) {
+    snprintf(mod_lib_path, sizeof(mod_lib_path), "%s/%s", config.install_root, mod_lib_dir);
+    setenv("APP_MOD_LIB", mod_lib_path, 1);
+  } else {
+    unsetenv("APP_MOD_LIB");
+  }
+  setenv("VALVE_GAME_PATH", config.install_root, 1);
   setenv("EXTRAS_VPK_PATH", extras_path, 1);
-  setenv("LANG", config.lang, 1);
+  setenv("LANG", language_env_name(config.lang), 1);
   setenv("HOME", config.install_root, 1);
-  setenv("LIBGL_USEVBO", "0", 1); // mirror the Android launcher's GL env
-  // disable SDL's touch->mouse before SDL inits (switch-sdl2 latches the hint at
-  // touch-device init); the engine handles touch natively (see imports.c)
+  setenv("LIBGL_USEVBO", "0", 1);
   setenv("SDL_TOUCH_MOUSE_EVENTS", "0", 1);
 
-  // -w/-h pin the render resolution to the panel size so the GL viewport matches
-  // the framebuffer (else a smaller mode renders into the bottom-left corner)
-  snprintf(cmdline, sizeof(cmdline), "-game %s -w %d -h %d %s",
-           config.gamedir, screen_width, screen_height, config.args);
+  cmdline[0] = '\0';
+  append_arg(cmdline, sizeof(cmdline), "-game");
+  append_arg(cmdline, sizeof(cmdline), config.gamedir);
+  append_arg(cmdline, sizeof(cmdline), "-w");
+  append_int_arg(cmdline, sizeof(cmdline), screen_width);
+  append_arg(cmdline, sizeof(cmdline), "-h");
+  append_int_arg(cmdline, sizeof(cmdline), screen_height);
+  append_user_args(cmdline, sizeof(cmdline), config.args);
+  if (config.console)
+    append_arg(cmdline, sizeof(cmdline), "-console");
+  append_arg(cmdline, sizeof(cmdline), "+cl_showfps");
+  append_arg(cmdline, sizeof(cmdline), config.show_fps ? "1" : "0");
+  append_arg(cmdline, sizeof(cmdline), "+joystick");
+  append_arg(cmdline, sizeof(cmdline), config.gamepad ? "1" : "0");
+  append_arg(cmdline, sizeof(cmdline), "+touch_enable");
+  append_arg(cmdline, sizeof(cmdline), config.touch_hud ? "1" : "0");
+  append_arg(cmdline, sizeof(cmdline), "-language");
+  append_arg(cmdline, sizeof(cmdline), config.lang);
+  append_arg(cmdline, sizeof(cmdline), "-audiolanguage");
+  append_arg(cmdline, sizeof(cmdline), config.lang);
+  if (episodic_game) {
+    append_arg(cmdline, sizeof(cmdline), "+hl2_episodic");
+    append_arg(cmdline, sizeof(cmdline), "1");
+  }
 #if DEBUG_LOG
   strncat(cmdline, " -dev 2", sizeof(cmdline) - strlen(cmdline) - 1);
 #endif
@@ -211,15 +419,13 @@ static void setup_game_environment(so_module *launcher) {
   setArgs(fake_env, NULL, cmdline);
 }
 
-// CPU clock manager: FastLoad maxes the CPU but floors the GPU, so engage it only
-// during loads. A load goes near-frozen; boost when frames over a 3s window are
-// near zero, drop when they flow. Hysteresis keeps progress frames from flapping.
+// FastLoad helps loading but floors GPU clocks, so switch it off once frames flow.
 extern volatile unsigned sdl_swap_count;
 extern volatile int g_video_playing;
 
-#define CLK_WIN_TICKS 12  // 3 s window (12 x 250 ms)
-#define CLK_BOOST_AT   5  // <= ~1.5 fps -> load -> FastLoad
-#define CLK_DROP_AT   12  // >  ~4 fps  -> Normal
+#define CLK_WIN_TICKS 12
+#define CLK_BOOST_AT   5
+#define CLK_DROP_AT   12
 
 static void *clock_thread(void *arg) {
   (void)arg;
@@ -230,9 +436,9 @@ static void *clock_thread(void *arg) {
   int boosted = 1;
 
   for (;;) {
-    svcSleepThread(250000000ll); // 250 ms
+    svcSleepThread(250000000ll);
     if (g_video_playing) {
-      last_swap = sdl_swap_count; // don't count intro frames
+      last_swap = sdl_swap_count;
       continue;
     }
 
@@ -262,12 +468,10 @@ static void start_clock_thread(void) {
 }
 
 int main(void) {
-  cpu_boost(1); // full clock through module loading and engine boot
+  cpu_boost(1);
 
   check_syscalls();
 
-  // hbmenu starts cwd at the nro's directory; everything from here is relative
-  // to the install root
   if (read_config(CONFIG_NAME) < 0) {
     chdir(DEFAULT_INSTALL_ROOT);
     if (read_config(CONFIG_NAME) < 0)
@@ -275,11 +479,15 @@ int main(void) {
   }
   chdir(config.install_root);
 
+  int picker = picker_run();
+  if (picker == 0) {
+    cpu_boost(0);
+    return 0;
+  }
+
   check_data();
   set_screen_size();
 
-  // bionic-style TLS for the main thread before any game code runs (libengine
-  // reads the stack-guard slot off TPIDR_EL0; see libc_shim.c)
   fake_tls_install();
   jni_init();
   proc_files_init(config.install_root);
@@ -297,7 +505,6 @@ int main(void) {
 
   start_clock_thread();
 
-  // LauncherMainAndroid ignores argc/argv and uses the globals set by setArgs
   static char *fake_argv[] = { "hl2_linux", NULL };
   const int ret = LauncherMainAndroid(1, fake_argv);
   debugPrintf("LauncherMainAndroid returned %d\n", ret);

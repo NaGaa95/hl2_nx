@@ -23,17 +23,20 @@
 // per-line SD card writes cost boot time; set to 1 when investigating a crash
 #define DEBUG_LOG 0
 
-// actual screen size in use
 extern int screen_width;
 extern int screen_height;
 
 typedef struct {
   int screen_width;
   int screen_height;
-  char install_root[256]; // fixed to DEFAULT_INSTALL_ROOT (not in config.txt)
-  char gamedir[64];       // -game arg: hl2 (default), episodic (EP1), or ep2 (EP2)
-  char args[256];         // extra command line (default "-console")
-  char lang[32];          // LANG env (default "en_US")
+  char install_root[256];
+  char gamedir[64];
+  char args[256];
+  char lang[32];
+  int show_fps;
+  int gamepad;
+  int touch_hud;
+  int console;
 } Config;
 
 extern Config config;
