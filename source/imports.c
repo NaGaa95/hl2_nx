@@ -43,6 +43,7 @@
 #include "libc_shim.h"
 #include "dl_emu.h"
 #include "video_player.h"
+#include "thread_affinity.h"
 
 extern uintptr_t __cxa_atexit;
 extern uintptr_t __stack_chk_fail;
@@ -303,6 +304,7 @@ static void *fake_thread_trampoline(void *arg) {
   FakeThreadStart start = *(FakeThreadStart *)arg;
   free(arg);
   fake_tls_install();
+  thread_affinity_pin_source_thread();
   return start.func(start.arg);
 }
 
@@ -356,8 +358,11 @@ static SDL_AudioCallback game_audio_callback;
 static void *game_audio_userdata;
 
 static void audio_callback_trampoline(void *userdata, Uint8 *stream, int len) {
+  static int affinity_set;
   (void)userdata;
   fake_tls_install();
+  if (__atomic_exchange_n(&affinity_set, 1, __ATOMIC_RELAXED) == 0)
+    thread_affinity_pin_background_thread();
   game_audio_callback(game_audio_userdata, stream, len);
 }
 
@@ -524,6 +529,9 @@ static void SDL_StartTextInput_fake(void) {
 }
 
 static SDL_GLContext SDL_GL_CreateContext_fake(SDL_Window *window) {
+  // Pin whichever Source thread owns GL before the context and driver state
+  // become hot in that core's caches.
+  thread_affinity_pin_render_thread();
   SDL_GLContext ctx = SDL_GL_CreateContext(window);
   static int startup_videos_done;
   if (ctx && !startup_videos_done) {

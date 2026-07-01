@@ -31,6 +31,7 @@
 #include "video_player.h"
 #include "config.h"
 #include "util.h"
+#include "thread_affinity.h"
 
 #ifndef GL_FRAMEBUFFER_SRGB
 #define GL_FRAMEBUFFER_SRGB 0x8DB9
@@ -378,25 +379,44 @@ static int play_one(SDL_Window *win, const char *path) {
   return skipped ? 1 : 0;
 }
 
-// resolve a startupvids entry (e.g. "media/valve.avi") to a file that actually
-// exists, trying the codecs we can decode; play it if found
-static int resolve_and_play(SDL_Window *win, const char *entry) {
-  // strip any extension from the entry's basename
-  char base[640];
-  snprintf(base, sizeof(base), "%s/%s/%s", config.install_root, config.gamedir, entry);
-  char *dot = strrchr(base, '.');
-  char *slash = strrchr(base, '/');
-  if (dot && (!slash || dot > slash)) *dot = '\0';
+// Startup videos use the same content inheritance as the games themselves.
+// In particular, EP1 gets shared files from hl2, while EP2 can inherit from
+// both episodic and hl2.
+static unsigned video_search_dirs(const char **dirs) {
+  unsigned count = 0;
+  dirs[count++] = config.gamedir;
+  if (!strcmp(config.gamedir, "ep2"))
+    dirs[count++] = "episodic";
+  if (strcmp(config.gamedir, "hl2"))
+    dirs[count++] = "hl2";
+  return count;
+}
 
+// resolve a startupvids entry (e.g. "media/valve.avi") through the game's
+// content search order, trying the codecs we can decode; play it if found
+static int resolve_and_play(SDL_Window *win, const char *entry) {
   static const char *const exts[] = { ".bik", ".webm", ".ogv", ".ogg",
                                       ".mp4", ".mov", ".avi", ".m4v" };
-  char path[768];
+  const char *dirs[3];
+  const unsigned dir_count = video_search_dirs(dirs);
   struct stat st;
-  for (unsigned i = 0; i < sizeof(exts) / sizeof(*exts); i++) {
-    snprintf(path, sizeof(path), "%s%s", base, exts[i]);
-    if (stat(path, &st) == 0 && S_ISREG(st.st_mode))
-      return play_one(win, path);
+
+  for (unsigned dir = 0; dir < dir_count; dir++) {
+    // strip any extension from the entry's basename
+    char base[640];
+    snprintf(base, sizeof(base), "%s/%s/%s", config.install_root, dirs[dir], entry);
+    char *dot = strrchr(base, '.');
+    char *slash = strrchr(base, '/');
+    if (dot && (!slash || dot > slash)) *dot = '\0';
+
+    char path[768];
+    for (unsigned i = 0; i < sizeof(exts) / sizeof(*exts); i++) {
+      snprintf(path, sizeof(path), "%s%s", base, exts[i]);
+      if (stat(path, &st) == 0 && S_ISREG(st.st_mode))
+        return play_one(win, path);
+    }
   }
+
   return -1; // nothing playable for this entry
 }
 
@@ -405,10 +425,15 @@ static void run_startup_videos(SDL_Window *win) {
   av_log_set_level(AV_LOG_FATAL);
 
   char list[400];
-  snprintf(list, sizeof(list), "%s/%s/media/startupvids.txt",
-           config.install_root, config.gamedir);
+  const char *dirs[3];
+  const unsigned dir_count = video_search_dirs(dirs);
+  FILE *f = NULL;
+  for (unsigned dir = 0; dir < dir_count && !f; dir++) {
+    snprintf(list, sizeof(list), "%s/%s/media/startupvids.txt",
+             config.install_root, dirs[dir]);
+    f = fopen(list, "r");
+  }
 
-  FILE *f = fopen(list, "r");
   if (f) {
     char line[256];
     while (fgets(line, sizeof(line), f)) {
@@ -440,6 +465,7 @@ typedef struct {
 
 static void *video_thread(void *p) {
   VidThreadArg *a = (VidThreadArg *)p;
+  thread_affinity_pin_render_thread();
   if (SDL_GL_MakeCurrent(a->win, a->ctx) != 0) {
     debugPrintf("video: worker SDL_GL_MakeCurrent failed: %s\n", SDL_GetError());
     return NULL;

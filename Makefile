@@ -19,7 +19,7 @@ include $(DEVKITPRO)/libnx/switch_rules
 TARGET		:=	$(notdir $(CURDIR))
 APP_TITLE	:=	Half-Life 2
 APP_AUTHOR	:=	naga
-APP_VERSION	:=	1.0.1
+APP_VERSION	:=	1.0.2
 BUILD		:=	build
 SOURCES		:=	source
 DATA		:=	data

@@ -64,6 +64,9 @@ int so_resolve(so_module *mod, DynLibFunction *funcs, int num_funcs, int taint_m
 void so_execute_init_array(so_module *mod);
 // pre-finalize only: address inside the RW mirror, for hooking/patching
 uintptr_t so_find_addr(so_module *mod, const char *symbol);
+// pre-finalize only: also searches the full, non-dynamic symbol table and
+// returns the symbol size when available
+uintptr_t so_find_addr_with_size(so_module *mod, const char *symbol, size_t *symbol_size);
 uintptr_t so_find_addr_rx(so_module *mod, const char *symbol);
 // returns 0 instead of aborting when the symbol is missing
 uintptr_t so_try_find_addr_rx(so_module *mod, const char *symbol);

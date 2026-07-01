@@ -1322,6 +1322,8 @@ int setvbuf_fake(FILE *f, char *buf, int mode, size_t size) {
 
 static const char fake_cpuinfo[] =
   "processor\t: 0\n"
+  "physical id\t: 0\n"
+  "core id\t\t: 0\n"
   "model name\t: ARMv8 Processor rev 1 (v8l)\n"
   "BogoMIPS\t: 38.40\n"
   "Features\t: fp asimd evtstrm aes pmull sha1 sha2 crc32\n"
@@ -1332,6 +1334,8 @@ static const char fake_cpuinfo[] =
   "CPU revision\t: 1\n"
   "\n"
   "processor\t: 1\n"
+  "physical id\t: 0\n"
+  "core id\t\t: 1\n"
   "model name\t: ARMv8 Processor rev 1 (v8l)\n"
   "BogoMIPS\t: 38.40\n"
   "Features\t: fp asimd evtstrm aes pmull sha1 sha2 crc32\n"
@@ -1342,6 +1346,8 @@ static const char fake_cpuinfo[] =
   "CPU revision\t: 1\n"
   "\n"
   "processor\t: 2\n"
+  "physical id\t: 0\n"
+  "core id\t\t: 2\n"
   "model name\t: ARMv8 Processor rev 1 (v8l)\n"
   "BogoMIPS\t: 38.40\n"
   "Features\t: fp asimd evtstrm aes pmull sha1 sha2 crc32\n"

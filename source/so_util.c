@@ -457,6 +457,60 @@ uintptr_t so_find_addr(so_module *mod, const char *symbol) {
   return 0;
 }
 
+uintptr_t so_find_addr_with_size(so_module *mod, const char *symbol, size_t *symbol_size) {
+  if (symbol_size)
+    *symbol_size = 0;
+
+  for (int i = 0; i < mod->num_syms; i++) {
+    const char *name = mod->dynstrtab + mod->syms[i].st_name;
+    if (strcmp(name, symbol) == 0) {
+      if (symbol_size)
+        *symbol_size = mod->syms[i].st_size;
+      return (uintptr_t)mod->load_base + mod->syms[i].st_value;
+    }
+  }
+
+  // Android's GameUI keeps useful local function names in .symtab, but they
+  // are not part of .dynsym and therefore are not present in the load image.
+  // Consult the temporary ELF file image while it is still available.
+  if (!mod->so_base)
+    return 0;
+
+  for (int i = 0; i < mod->elf_hdr->e_shnum; i++) {
+    const Elf64_Shdr *symtab = &mod->sec_hdr[i];
+    if (symtab->sh_type != SHT_SYMTAB ||
+        symtab->sh_link >= mod->elf_hdr->e_shnum ||
+        symtab->sh_entsize != sizeof(Elf64_Sym) ||
+        symtab->sh_offset + symtab->sh_size > mod->so_size)
+      continue;
+
+    const Elf64_Shdr *strtab = &mod->sec_hdr[symtab->sh_link];
+    if (strtab->sh_type != SHT_STRTAB ||
+        strtab->sh_offset + strtab->sh_size > mod->so_size)
+      continue;
+
+    const Elf64_Sym *symbols =
+        (const Elf64_Sym *)((uintptr_t)mod->so_base + symtab->sh_offset);
+    const char *strings = (const char *)mod->so_base + strtab->sh_offset;
+    const size_t count = symtab->sh_size / sizeof(*symbols);
+
+    for (size_t j = 0; j < count; j++) {
+      if (symbols[j].st_shndx == SHN_UNDEF ||
+          symbols[j].st_name >= strtab->sh_size ||
+          symbols[j].st_value >= mod->load_size ||
+          symbols[j].st_size > mod->load_size - symbols[j].st_value)
+        continue;
+      if (strcmp(strings + symbols[j].st_name, symbol) == 0) {
+        if (symbol_size)
+          *symbol_size = symbols[j].st_size;
+        return (uintptr_t)mod->load_base + symbols[j].st_value;
+      }
+    }
+  }
+
+  return 0;
+}
+
 uintptr_t so_find_addr_rx(so_module *mod, const char *symbol) {
   const uintptr_t addr = so_try_find_addr_rx(mod, symbol);
   if (!addr)
