@@ -314,7 +314,8 @@ static int play_one(SDL_Window *win, const char *path) {
                      vctx->width, vctx->height, AV_PIX_FMT_RGBA,
                      SWS_BILINEAR, NULL, NULL, NULL);
   VidGL gl;
-  uint8_t *rgba = (uint8_t *)malloc((size_t)vctx->width * vctx->height * 4);
+  int rgba_buf_size = av_image_get_buffer_size(AV_PIX_FMT_RGBA, vctx->width, vctx->height, 1);
+  uint8_t *rgba = (rgba_buf_size > 0) ? (uint8_t *)malloc((size_t)rgba_buf_size) : NULL;
   if (!sws || !rgba || vidgl_init(&gl, vctx->width, vctx->height) < 0) {
     debugPrintf("video: GL/sws setup failed\n");
     free(rgba);
