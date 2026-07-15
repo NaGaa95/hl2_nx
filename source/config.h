@@ -37,6 +37,9 @@ typedef struct {
   int gamepad;
   int touch_hud;
   int console;
+  int gyro_enabled;
+  int gyro_sensitivity;
+  int gyro_invert_y;
 } Config;
 
 extern Config config;
