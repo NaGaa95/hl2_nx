@@ -24,7 +24,15 @@
 #define STICK_THRESHOLD 16000
 #define STICK_DEADZONE 8000
 #define OPTIONS_INDEX NUM_GAMES
-#define NUM_OPTION_ROWS 5
+#define NUM_OPTION_ROWS 8
+
+#define OPT_ROW_GYRO        5
+#define OPT_ROW_GYRO_INVERT 6
+#define OPT_ROW_GYRO_SENS   7
+
+#define GYRO_SENS_MIN  10
+#define GYRO_SENS_MAX  400
+#define GYRO_SENS_STEP 10
 #define MAX_LANG_OPTIONS 32
 #define LANG_VISIBLE_ROWS 9
 
@@ -700,6 +708,9 @@ static const char *option_label(int row) {
     "GAMEPAD",
     "TOUCH HUD",
     "CONSOLE",
+    "GYRO",
+    "GYRO INVERT Y",
+    "GYRO SENS",
   };
   return labels[row];
 }
@@ -710,6 +721,8 @@ static int option_enabled(int row) {
   case 2: return config.gamepad;
   case 3: return config.touch_hud;
   case 4: return config.console;
+  case OPT_ROW_GYRO: return config.gyro_enabled;
+  case OPT_ROW_GYRO_INVERT: return config.gyro_invert_y;
   default: return 0;
   }
 }
@@ -720,8 +733,18 @@ static void toggle_option(int row) {
   case 2: config.gamepad = !config.gamepad; break;
   case 3: config.touch_hud = !config.touch_hud; break;
   case 4: config.console = !config.console; break;
+  case OPT_ROW_GYRO: config.gyro_enabled = !config.gyro_enabled; break;
+  case OPT_ROW_GYRO_INVERT: config.gyro_invert_y = !config.gyro_invert_y; break;
   default: return;
   }
+  write_config(CONFIG_NAME);
+}
+
+static void step_sensitivity(int dir) {
+  int v = config.gyro_sensitivity + dir * GYRO_SENS_STEP;
+  if (v < GYRO_SENS_MIN) v = GYRO_SENS_MIN;
+  if (v > GYRO_SENS_MAX) v = GYRO_SENS_MAX;
+  config.gyro_sensitivity = v;
   write_config(CONFIG_NAME);
 }
 
@@ -769,7 +792,7 @@ static void draw_options_menu(SDL_Renderer *ren, int w, int h, int selected,
   int scale = s < 0.75f ? 2 : 3;
   int box = (int)(30.0f * s + 0.5f);
   SDL_Rect full = { 0, 0, w, h };
-  SDL_Rect panel = centered_panel_rect(w, h, 920.0f, 620.0f);
+  SDL_Rect panel = centered_panel_rect(w, h, 920.0f, 860.0f);
 
   if (box < 22) box = 22;
 
@@ -808,6 +831,18 @@ static void draw_options_menu(SDL_Renderer *ren, int w, int h, int selected,
       draw_centered_text(ren, value.x + value.w / 2,
                          value.y + (value.h - 7 * scale) / 2,
                          scale, label, 235, 235, 225, 255);
+    } else if (i == OPT_ROW_GYRO_SENS) {
+      char label[16];
+      snprintf(label, sizeof(label), "%d%%", config.gyro_sensitivity);
+      int value_w = text_width(label, scale) + (int)(42.0f * s + 0.5f);
+      SDL_Rect value = { row.x + row.w - value_w - (int)(24.0f * s + 0.5f),
+                         row.y + (row.h - box) / 2, value_w, box };
+      SDL_SetRenderDrawColor(ren, 20, 20, 28, 230);
+      SDL_RenderFillRect(ren, &value);
+      draw_outline(ren, &value, 2, 180, 180, 175, 220);
+      draw_centered_text(ren, value.x + value.w / 2,
+                         value.y + (value.h - 7 * scale) / 2,
+                         scale, label, 235, 235, 225, 255);
     } else {
       int enabled = option_enabled(i);
       SDL_Rect cb = { row.x + row.w - box - (int)(96.0f * s + 0.5f),
@@ -837,6 +872,21 @@ static void refresh_language_state(int *langs, int *count, int *selected, int *s
   build_language_list(langs, count);
   *selected = selected_language_row(langs, *count);
   keep_language_visible(*selected, scroll, *count);
+}
+
+/* Left/right adjust for the options view: language cycles, the sensitivity row
+ * steps, everything else toggles. Centralizes the per-key handling. */
+static void options_adjust(int row, int dir,
+                           int *langs, int *lang_count,
+                           int *lang_selected, int *lang_scroll) {
+  if (row == 1) {
+    cycle_language(langs, *lang_count, dir);
+    refresh_language_state(langs, lang_count, lang_selected, lang_scroll);
+  } else if (row == OPT_ROW_GYRO_SENS) {
+    step_sensitivity(dir);
+  } else {
+    toggle_option(row);
+  }
 }
 
 static SDL_Rect language_row_rect(const SDL_Rect *panel, int visible_row, int w, int h) {
@@ -997,12 +1047,8 @@ int picker_run(void) {
               last_game_selected = selected;
             pulse_time = 0.0f;
           } else if (view == PICKER_OPTIONS) {
-            if (option_selected == 1) {
-              cycle_language(lang_options, lang_count, -1);
-              refresh_language_state(lang_options, &lang_count, &language_selected, &language_scroll);
-            } else {
-              toggle_option(option_selected);
-            }
+            options_adjust(option_selected, -1,
+                           lang_options, &lang_count, &language_selected, &language_scroll);
           } else if (view == PICKER_LANGUAGE) {
             language_selected -= LANG_VISIBLE_ROWS;
             if (language_selected < 0) language_selected = 0;
@@ -1016,12 +1062,8 @@ int picker_run(void) {
               last_game_selected = selected;
             pulse_time = 0.0f;
           } else if (view == PICKER_OPTIONS) {
-            if (option_selected == 1) {
-              cycle_language(lang_options, lang_count, 1);
-              refresh_language_state(lang_options, &lang_count, &language_selected, &language_scroll);
-            } else {
-              toggle_option(option_selected);
-            }
+            options_adjust(option_selected, 1,
+                           lang_options, &lang_count, &language_selected, &language_scroll);
           } else if (view == PICKER_LANGUAGE) {
             language_selected += LANG_VISIBLE_ROWS;
             if (language_selected >= lang_count) language_selected = lang_count - 1;
@@ -1066,6 +1108,8 @@ int picker_run(void) {
             if (option_selected == 1) {
               refresh_language_state(lang_options, &lang_count, &language_selected, &language_scroll);
               view = PICKER_LANGUAGE;
+            } else if (option_selected == OPT_ROW_GYRO_SENS) {
+              step_sensitivity(1);
             } else {
               toggle_option(option_selected);
             }
@@ -1106,12 +1150,8 @@ int picker_run(void) {
                 last_game_selected = selected;
               pulse_time = 0.0f;
             } else if (view == PICKER_OPTIONS) {
-              if (option_selected == 1) {
-                cycle_language(lang_options, lang_count, -1);
-                refresh_language_state(lang_options, &lang_count, &language_selected, &language_scroll);
-              } else {
-                toggle_option(option_selected);
-              }
+              options_adjust(option_selected, -1,
+                             lang_options, &lang_count, &language_selected, &language_scroll);
             } else if (view == PICKER_LANGUAGE) {
               language_selected -= LANG_VISIBLE_ROWS;
               if (language_selected < 0) language_selected = 0;
@@ -1125,12 +1165,8 @@ int picker_run(void) {
                 last_game_selected = selected;
               pulse_time = 0.0f;
             } else if (view == PICKER_OPTIONS) {
-              if (option_selected == 1) {
-                cycle_language(lang_options, lang_count, 1);
-                refresh_language_state(lang_options, &lang_count, &language_selected, &language_scroll);
-              } else {
-                toggle_option(option_selected);
-              }
+              options_adjust(option_selected, 1,
+                             lang_options, &lang_count, &language_selected, &language_scroll);
             } else if (view == PICKER_LANGUAGE) {
               language_selected += LANG_VISIBLE_ROWS;
               if (language_selected >= lang_count) language_selected = lang_count - 1;
@@ -1201,7 +1237,7 @@ int picker_run(void) {
             }
           }
         } else if (view == PICKER_OPTIONS) {
-          SDL_Rect panel = centered_panel_rect(screen_w, screen_h, 920.0f, 620.0f);
+          SDL_Rect panel = centered_panel_rect(screen_w, screen_h, 920.0f, 860.0f);
           int handled = 0;
           for (int i = 0; i < NUM_OPTION_ROWS; i++) {
             SDL_Rect row = option_row_rect(&panel, i, screen_w, screen_h);
@@ -1210,6 +1246,8 @@ int picker_run(void) {
               if (i == 1) {
                 refresh_language_state(lang_options, &lang_count, &language_selected, &language_scroll);
                 view = PICKER_LANGUAGE;
+              } else if (i == OPT_ROW_GYRO_SENS) {
+                step_sensitivity(1);
               } else {
                 toggle_option(i);
               }
