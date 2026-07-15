@@ -31,17 +31,28 @@ static void acquire_handles(u32 style) {
   g_handle_count = 0;
   g_style_active = 0;
 
+  Result rc;
   if (style & HidNpadStyleTag_NpadHandheld) {
-    hidGetSixAxisSensorHandles(&g_handles[0], 1, HidNpadIdType_Handheld, HidNpadStyleTag_NpadHandheld);
-    g_handle_count = 1;
+    rc = hidGetSixAxisSensorHandles(&g_handles[0], 1, HidNpadIdType_Handheld, HidNpadStyleTag_NpadHandheld);
+    if (R_SUCCEEDED(rc))
+      g_handle_count = 1;
   } else if (style & HidNpadStyleTag_NpadFullKey) {
-    hidGetSixAxisSensorHandles(&g_handles[0], 1, HidNpadIdType_No1, HidNpadStyleTag_NpadFullKey);
-    g_handle_count = 1;
+    rc = hidGetSixAxisSensorHandles(&g_handles[0], 1, HidNpadIdType_No1, HidNpadStyleTag_NpadFullKey);
+    if (R_SUCCEEDED(rc))
+      g_handle_count = 1;
   } else if (style & HidNpadStyleTag_NpadJoyDual) {
-    hidGetSixAxisSensorHandles(&g_handles[0], 2, HidNpadIdType_No1, HidNpadStyleTag_NpadJoyDual);
-    g_handle_count = 2;   /* [0]=left, [1]=right; aim reads the right one */
+    rc = hidGetSixAxisSensorHandles(&g_handles[0], 2, HidNpadIdType_No1, HidNpadStyleTag_NpadJoyDual);
+    if (R_SUCCEEDED(rc))
+      g_handle_count = 2;   /* [0]=left, [1]=right; aim reads the right one */
   } else {
     debugPrintf("gyro: no supported controller style (0x%x)\n", style);
+    g_style_active = style;   /* record attempted style so we don't re-log every frame */
+    return;
+  }
+
+  if (g_handle_count == 0) {
+    debugPrintf("gyro: failed to acquire SixAxis handles (style 0x%x)\n", style);
+    g_style_active = style;   /* record attempted style so we don't re-log every frame */
     return;
   }
 
@@ -66,7 +77,7 @@ void gyro_frame(void) {
 
   padUpdate(&g_pad);
   const u32 style = padGetStyleSet(&g_pad);
-  if (style != g_style_active || g_handle_count == 0)
+  if (style != g_style_active)
     acquire_handles(style);
   if (g_handle_count == 0)
     return;
