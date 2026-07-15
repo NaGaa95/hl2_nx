@@ -38,6 +38,7 @@
 #include <switch.h>
 
 #include "config.h"
+#include "gyro.h"
 #include "so_util.h"
 #include "util.h"
 #include "libc_shim.h"
@@ -435,6 +436,7 @@ static SDL_bool SDL_GetWindowWMInfo_fake(SDL_Window *window, SDL_SysWMinfo *info
 static void SDL_GL_SwapWindow_fake(SDL_Window *window) {
   ++sdl_swap_count;
   apply_display_pass(window);
+  gyro_frame();
   SDL_GL_SwapWindow(window);
 }
 
