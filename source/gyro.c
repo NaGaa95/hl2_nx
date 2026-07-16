@@ -76,7 +76,7 @@ static void sample_to_look(const HidSixAxisSensorState *st, int space,
   const float az = st->angular_velocity.z;
 
   if (space == GYRO_SPACE_LOCAL) {
-    *out_yaw   = -ay;
+    *out_yaw   = ay;
     *out_pitch = -ax;
     return;
   }
@@ -90,9 +90,9 @@ static void sample_to_look(const HidSixAxisSensorState *st, int space,
   if (gl > 0.0001f) { gx /= gl; gy /= gl; gz /= gl; }
 
   if (space == GYRO_SPACE_WORLD)
-    *out_yaw = -(ax * gx + ay * gy + az * gz);   /* rotation about the true vertical */
+    *out_yaw = ax * gx + ay * gy + az * gz;      /* rotation about the true vertical */
   else /* GYRO_SPACE_PLAYER */
-    *out_yaw = -(ay * gy + az * gz);             /* blend yaw + roll by gravity */
+    *out_yaw = ay * gy + az * gz;                /* blend yaw + roll by gravity */
 
   *out_pitch = -ax;
 }
