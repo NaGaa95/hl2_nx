@@ -152,7 +152,8 @@ void gyro_frame(void) {
   int dx = 0, dy = 0;
   gyro_math_step(&g_accum, sum_x, sum_y, speed,
                  config.gyro_sensitivity_x, config.gyro_sensitivity_y,
-                 config.gyro_invert_y, config.gyro_tighten, config.gyro_accel,
+                 config.gyro_invert_x, config.gyro_invert_y,
+                 config.gyro_tighten, config.gyro_accel,
                  &dx, &dy);
   if (dx == 0 && dy == 0)
     return;

@@ -22,6 +22,7 @@ typedef struct {
  *   speed         : average per-sample angular speed this frame, used by the
  *                   tightening and acceleration shaping (raw libnx units)
  *   sens_x/sens_y : integer percent per axis; 100 == base scale
+ *   invert_x      : non-zero flips the horizontal delta
  *   invert_y      : non-zero flips the vertical delta
  *   tighten       : non-zero tapers tiny movements toward zero (anti-drift)
  *   accel         : non-zero applies a speed-based acceleration multiplier
@@ -31,7 +32,7 @@ typedef struct {
  */
 void gyro_math_step(GyroAccum *acc,
                     float sum_x, float sum_y, float speed,
-                    int sens_x, int sens_y, int invert_y,
+                    int sens_x, int sens_y, int invert_x, int invert_y,
                     int tighten, int accel,
                     int *out_dx, int *out_dy);
 

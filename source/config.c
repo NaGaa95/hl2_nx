@@ -26,6 +26,7 @@
   CONFIG_VAR_INT(gyro_enabled); \
   CONFIG_VAR_INT(gyro_sensitivity_x); \
   CONFIG_VAR_INT(gyro_sensitivity_y); \
+  CONFIG_VAR_INT(gyro_invert_x); \
   CONFIG_VAR_INT(gyro_invert_y); \
   CONFIG_VAR_INT(gyro_space); \
   CONFIG_VAR_INT(gyro_tighten); \
@@ -111,6 +112,7 @@ int read_config(const char *file) {
   config.gyro_enabled = 0;
   config.gyro_sensitivity_x = 100;
   config.gyro_sensitivity_y = 100;
+  config.gyro_invert_x = 0;
   config.gyro_invert_y = 0;
   config.gyro_space = 0;
   config.gyro_tighten = 0;

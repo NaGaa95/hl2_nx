@@ -25,16 +25,17 @@
 #define STICK_THRESHOLD 16000
 #define STICK_DEADZONE 8000
 #define OPTIONS_INDEX NUM_GAMES
-#define NUM_OPTION_ROWS 12
+#define NUM_OPTION_ROWS 13
 #define OPT_VISIBLE_ROWS 9
 
-#define OPT_ROW_GYRO         5
-#define OPT_ROW_GYRO_INVERT  6
-#define OPT_ROW_GYRO_SENS_X  7
-#define OPT_ROW_GYRO_SENS_Y  8
-#define OPT_ROW_GYRO_SPACE   9
-#define OPT_ROW_GYRO_TIGHTEN 10
-#define OPT_ROW_GYRO_ACCEL   11
+#define OPT_ROW_GYRO          5
+#define OPT_ROW_GYRO_INVERT_X 6
+#define OPT_ROW_GYRO_INVERT_Y 7
+#define OPT_ROW_GYRO_SENS_X   8
+#define OPT_ROW_GYRO_SENS_Y   9
+#define OPT_ROW_GYRO_SPACE    10
+#define OPT_ROW_GYRO_TIGHTEN  11
+#define OPT_ROW_GYRO_ACCEL    12
 
 #define GYRO_SENS_MIN  10
 #define GYRO_SENS_MAX  1000
@@ -715,6 +716,7 @@ static const char *option_label(int row) {
     "TOUCH HUD",
     "CONSOLE",
     "GYRO",
+    "GYRO INVERT X",
     "GYRO INVERT Y",
     "GYRO SENS X",
     "GYRO SENS Y",
@@ -732,7 +734,8 @@ static int option_enabled(int row) {
   case 3: return config.touch_hud;
   case 4: return config.console;
   case OPT_ROW_GYRO: return config.gyro_enabled;
-  case OPT_ROW_GYRO_INVERT: return config.gyro_invert_y;
+  case OPT_ROW_GYRO_INVERT_X: return config.gyro_invert_x;
+  case OPT_ROW_GYRO_INVERT_Y: return config.gyro_invert_y;
   case OPT_ROW_GYRO_TIGHTEN: return config.gyro_tighten;
   case OPT_ROW_GYRO_ACCEL: return config.gyro_accel;
   default: return 0;
@@ -746,7 +749,8 @@ static void toggle_option(int row) {
   case 3: config.touch_hud = !config.touch_hud; break;
   case 4: config.console = !config.console; break;
   case OPT_ROW_GYRO: config.gyro_enabled = !config.gyro_enabled; break;
-  case OPT_ROW_GYRO_INVERT: config.gyro_invert_y = !config.gyro_invert_y; break;
+  case OPT_ROW_GYRO_INVERT_X: config.gyro_invert_x = !config.gyro_invert_x; break;
+  case OPT_ROW_GYRO_INVERT_Y: config.gyro_invert_y = !config.gyro_invert_y; break;
   case OPT_ROW_GYRO_TIGHTEN: config.gyro_tighten = !config.gyro_tighten; break;
   case OPT_ROW_GYRO_ACCEL: config.gyro_accel = !config.gyro_accel; break;
   default: return;
@@ -779,7 +783,8 @@ static void cycle_gyro_space(int dir) {
 static const char *option_reco(int row) {
   switch (row) {
   case OPT_ROW_GYRO:         return "recommended: ON";
-  case OPT_ROW_GYRO_INVERT:  return "recommended: OFF";
+  case OPT_ROW_GYRO_INVERT_X: return "recommended: OFF";
+  case OPT_ROW_GYRO_INVERT_Y: return "recommended: OFF";
   case OPT_ROW_GYRO_SENS_X:  return "recommended: ~200%";
   case OPT_ROW_GYRO_SENS_Y:  return "recommended: ~150%";
   case OPT_ROW_GYRO_SPACE:   return "recommended: PLAYER";

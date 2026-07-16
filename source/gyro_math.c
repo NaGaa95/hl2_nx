@@ -32,7 +32,7 @@ static float smoothstep01(float t) {
 
 void gyro_math_step(GyroAccum *acc,
                     float sum_x, float sum_y, float speed,
-                    int sens_x, int sens_y, int invert_y,
+                    int sens_x, int sens_y, int invert_x, int invert_y,
                     int tighten, int accel,
                     int *out_dx, int *out_dy) {
   float mult = 1.0f;
@@ -52,7 +52,8 @@ void gyro_math_step(GyroAccum *acc,
     mult *= a;
   }
 
-  const float kx = GYRO_BASE_SCALE * mult * (float)sens_x / 100.0f;
+  const float kx = GYRO_BASE_SCALE * mult * (float)sens_x / 100.0f
+                   * (invert_x ? -1.0f : 1.0f);
   const float ky = GYRO_BASE_SCALE * mult * (float)sens_y / 100.0f
                    * (invert_y ? -1.0f : 1.0f);
 

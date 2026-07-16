@@ -40,6 +40,7 @@ typedef struct {
   int gyro_enabled;
   int gyro_sensitivity_x;
   int gyro_sensitivity_y;
+  int gyro_invert_x;
   int gyro_invert_y;
   int gyro_space;     /* 0 local, 1 world, 2 player (see gyro.h) */
   int gyro_tighten;   /* anti-drift taper near zero */
