@@ -12,7 +12,6 @@
 
 #include <switch.h>
 #include <SDL2/SDL.h>
-#include <stdbool.h>
 #include <math.h>
 
 #include "gyro.h"
@@ -20,20 +19,22 @@
 #include "config.h"
 #include "util.h"
 
-static bool g_pad_ready = false;
-static PadState g_pad;
 static HidSixAxisSensorHandle g_handles[2];
 static int g_handle_count = 0;
 static u32 g_style_active = 0;   /* style set the current handles were acquired for */
 static u64 g_last_sample = 0;    /* newest SixAxis sample already consumed */
 static GyroAccum g_accum;
 
-static void acquire_handles(u32 style) {
+static void stop_handles(void) {
   for (int i = 0; i < g_handle_count; i++)
     hidStopSixAxisSensor(g_handles[i]);
   g_handle_count = 0;
   g_style_active = 0;
   g_last_sample = 0;   /* a freshly started sensor restarts its sample counter */
+}
+
+static void acquire_handles(u32 style) {
+  stop_handles();
 
   Result rc;
   if (style & HidNpadStyleTag_NpadHandheld) {
@@ -97,21 +98,19 @@ static void sample_to_look(const HidSixAxisSensorState *st, int space,
 }
 
 void gyro_frame(void) {
-  if (!config.gyro_enabled)
+  if (!config.gyro_enabled) {
+    if (g_handle_count > 0)
+      stop_handles();   /* release the sensor when the feature is turned off */
     return;
+  }
   if (SDL_GetRelativeMouseMode() != SDL_TRUE)
     return;
 
-  if (!g_pad_ready) {
-    padConfigureInput(1, HidNpadStyleSet_NpadStandard);
-    padInitializeDefault(&g_pad);
-    g_accum.rem_x = 0.0f;
-    g_accum.rem_y = 0.0f;
-    g_pad_ready = true;
-  }
-
-  padUpdate(&g_pad);
-  const u32 style = padGetStyleSet(&g_pad);
+  /* Detect the active controller's style WITHOUT reconfiguring global HID
+   * (SDL owns that): read the style set directly, handheld first, else P1. */
+  u32 style = hidGetNpadStyleSet(HidNpadIdType_Handheld);
+  if (!style)
+    style = hidGetNpadStyleSet(HidNpadIdType_No1);
   if (style != g_style_active)
     acquire_handles(style);
   if (g_handle_count == 0)
