@@ -771,7 +771,7 @@ static const char *gyro_space_name(int sp) {
 }
 
 static void cycle_gyro_space(int dir) {
-  config.gyro_space = (config.gyro_space + dir + 3) % 3;
+  config.gyro_space = (config.gyro_space + dir + GYRO_SPACE_COUNT) % GYRO_SPACE_COUNT;
   write_config(CONFIG_NAME);
 }
 

@@ -15,6 +15,7 @@ enum {
   GYRO_SPACE_LOCAL  = 0,
   GYRO_SPACE_WORLD  = 1,
   GYRO_SPACE_PLAYER = 2,
+  GYRO_SPACE_COUNT  = 3,
 };
 
 /* Read the gyro once and, if enabled and in-game, push an SDL_MOUSEMOTION.
