@@ -12,6 +12,7 @@
 #include <SDL2/SDL_image.h>
 
 #include "config.h"
+#include "gyro.h"
 #include "picker.h"
 
 #define NUM_GAMES 3
@@ -24,12 +25,16 @@
 #define STICK_THRESHOLD 16000
 #define STICK_DEADZONE 8000
 #define OPTIONS_INDEX NUM_GAMES
-#define NUM_OPTION_ROWS 9
+#define NUM_OPTION_ROWS 12
+#define OPT_VISIBLE_ROWS 9
 
 #define OPT_ROW_GYRO         5
 #define OPT_ROW_GYRO_INVERT  6
 #define OPT_ROW_GYRO_SENS_X  7
 #define OPT_ROW_GYRO_SENS_Y  8
+#define OPT_ROW_GYRO_SPACE   9
+#define OPT_ROW_GYRO_TIGHTEN 10
+#define OPT_ROW_GYRO_ACCEL   11
 
 #define GYRO_SENS_MIN  10
 #define GYRO_SENS_MAX  1000
@@ -713,6 +718,9 @@ static const char *option_label(int row) {
     "GYRO INVERT Y",
     "GYRO SENS X",
     "GYRO SENS Y",
+    "GYRO SPACE",
+    "GYRO TIGHTEN",
+    "GYRO ACCEL",
   };
   return labels[row];
 }
@@ -725,6 +733,8 @@ static int option_enabled(int row) {
   case 4: return config.console;
   case OPT_ROW_GYRO: return config.gyro_enabled;
   case OPT_ROW_GYRO_INVERT: return config.gyro_invert_y;
+  case OPT_ROW_GYRO_TIGHTEN: return config.gyro_tighten;
+  case OPT_ROW_GYRO_ACCEL: return config.gyro_accel;
   default: return 0;
   }
 }
@@ -737,6 +747,8 @@ static void toggle_option(int row) {
   case 4: config.console = !config.console; break;
   case OPT_ROW_GYRO: config.gyro_enabled = !config.gyro_enabled; break;
   case OPT_ROW_GYRO_INVERT: config.gyro_invert_y = !config.gyro_invert_y; break;
+  case OPT_ROW_GYRO_TIGHTEN: config.gyro_tighten = !config.gyro_tighten; break;
+  case OPT_ROW_GYRO_ACCEL: config.gyro_accel = !config.gyro_accel; break;
   default: return;
   }
   write_config(CONFIG_NAME);
@@ -748,6 +760,45 @@ static void step_sensitivity(int *field, int dir) {
   if (v > GYRO_SENS_MAX) v = GYRO_SENS_MAX;
   *field = v;
   write_config(CONFIG_NAME);
+}
+
+static const char *gyro_space_name(int sp) {
+  switch (sp) {
+  case GYRO_SPACE_WORLD:  return "WORLD";
+  case GYRO_SPACE_PLAYER: return "PLAYER";
+  default:                return "LOCAL";
+  }
+}
+
+static void cycle_gyro_space(int dir) {
+  config.gyro_space = (config.gyro_space + dir + 3) % 3;
+  write_config(CONFIG_NAME);
+}
+
+/* Recommended-value hint shown in the options footer for the selected row. */
+static const char *option_reco(int row) {
+  switch (row) {
+  case OPT_ROW_GYRO:         return "recommended: ON";
+  case OPT_ROW_GYRO_INVERT:  return "recommended: OFF";
+  case OPT_ROW_GYRO_SENS_X:  return "recommended: ~200%";
+  case OPT_ROW_GYRO_SENS_Y:  return "recommended: ~150%";
+  case OPT_ROW_GYRO_SPACE:   return "recommended: PLAYER";
+  case OPT_ROW_GYRO_TIGHTEN: return "recommended: ON";
+  case OPT_ROW_GYRO_ACCEL:   return "recommended: OFF";
+  default:                   return NULL;
+  }
+}
+
+/* Scroll offset that keeps the selected row inside the visible window. */
+static int option_scroll_for(int selected) {
+  int max_scroll = NUM_OPTION_ROWS - OPT_VISIBLE_ROWS;
+  int scroll = 0;
+  if (max_scroll < 0) max_scroll = 0;
+  if (selected >= OPT_VISIBLE_ROWS)
+    scroll = selected - OPT_VISIBLE_ROWS + 1;
+  if (scroll > max_scroll) scroll = max_scroll;
+  if (scroll < 0) scroll = 0;
+  return scroll;
 }
 
 static void set_language_from_row(const int *langs, int row) {
@@ -794,7 +845,7 @@ static void draw_options_menu(SDL_Renderer *ren, int w, int h, int selected,
   int scale = s < 0.75f ? 2 : 3;
   int box = (int)(30.0f * s + 0.5f);
   SDL_Rect full = { 0, 0, w, h };
-  SDL_Rect panel = centered_panel_rect(w, h, 920.0f, 860.0f);
+  SDL_Rect panel = centered_panel_rect(w, h, 920.0f, 900.0f);
 
   if (box < 22) box = 22;
 
@@ -807,8 +858,14 @@ static void draw_options_menu(SDL_Renderer *ren, int w, int h, int selected,
                      panel.y + (int)(42.0f * s + 0.5f),
                      scale + 1, "OPTIONS", 255, 205, 80, 255);
 
-  for (int i = 0; i < NUM_OPTION_ROWS; i++) {
-    SDL_Rect row = option_row_rect(&panel, i, w, h);
+  const int scroll = option_scroll_for(selected);
+
+  for (int vr = 0; vr < OPT_VISIBLE_ROWS; vr++) {
+    int i = scroll + vr;
+    if (i >= NUM_OPTION_ROWS)
+      break;
+
+    SDL_Rect row = option_row_rect(&panel, vr, w, h);
     int active = i == selected;
 
     if (active) {
@@ -821,32 +878,32 @@ static void draw_options_menu(SDL_Renderer *ren, int w, int h, int selected,
               row.y + (row.h - 7 * scale) / 2,
               scale, option_label(i), 230, 230, 220, 255);
 
+    /* value-box rows (language, sensitivities, gyro space) vs toggle rows */
+    const char *value = NULL;
+    char valbuf[16];
     if (i == 1) {
       int lang_row = selected_language_row(langs, lang_count);
-      const char *label = language_options[langs[lang_row]].label;
-      int value_w = text_width(label, scale) + (int)(42.0f * s + 0.5f);
-      SDL_Rect value = { row.x + row.w - value_w - (int)(24.0f * s + 0.5f),
-                         row.y + (row.h - box) / 2, value_w, box };
+      value = language_options[langs[lang_row]].label;
+    } else if (i == OPT_ROW_GYRO_SENS_X) {
+      snprintf(valbuf, sizeof(valbuf), "%d%%", config.gyro_sensitivity_x);
+      value = valbuf;
+    } else if (i == OPT_ROW_GYRO_SENS_Y) {
+      snprintf(valbuf, sizeof(valbuf), "%d%%", config.gyro_sensitivity_y);
+      value = valbuf;
+    } else if (i == OPT_ROW_GYRO_SPACE) {
+      value = gyro_space_name(config.gyro_space);
+    }
+
+    if (value) {
+      int value_w = text_width(value, scale) + (int)(42.0f * s + 0.5f);
+      SDL_Rect vbox = { row.x + row.w - value_w - (int)(24.0f * s + 0.5f),
+                        row.y + (row.h - box) / 2, value_w, box };
       SDL_SetRenderDrawColor(ren, 20, 20, 28, 230);
-      SDL_RenderFillRect(ren, &value);
-      draw_outline(ren, &value, 2, 180, 180, 175, 220);
-      draw_centered_text(ren, value.x + value.w / 2,
-                         value.y + (value.h - 7 * scale) / 2,
-                         scale, label, 235, 235, 225, 255);
-    } else if (i == OPT_ROW_GYRO_SENS_X || i == OPT_ROW_GYRO_SENS_Y) {
-      char label[16];
-      int sens = (i == OPT_ROW_GYRO_SENS_X) ? config.gyro_sensitivity_x
-                                            : config.gyro_sensitivity_y;
-      snprintf(label, sizeof(label), "%d%%", sens);
-      int value_w = text_width(label, scale) + (int)(42.0f * s + 0.5f);
-      SDL_Rect value = { row.x + row.w - value_w - (int)(24.0f * s + 0.5f),
-                         row.y + (row.h - box) / 2, value_w, box };
-      SDL_SetRenderDrawColor(ren, 20, 20, 28, 230);
-      SDL_RenderFillRect(ren, &value);
-      draw_outline(ren, &value, 2, 180, 180, 175, 220);
-      draw_centered_text(ren, value.x + value.w / 2,
-                         value.y + (value.h - 7 * scale) / 2,
-                         scale, label, 235, 235, 225, 255);
+      SDL_RenderFillRect(ren, &vbox);
+      draw_outline(ren, &vbox, 2, 180, 180, 175, 220);
+      draw_centered_text(ren, vbox.x + vbox.w / 2,
+                         vbox.y + (vbox.h - 7 * scale) / 2,
+                         scale, value, 235, 235, 225, 255);
     } else {
       int enabled = option_enabled(i);
       SDL_Rect cb = { row.x + row.w - box - (int)(96.0f * s + 0.5f),
@@ -858,6 +915,13 @@ static void draw_options_menu(SDL_Renderer *ren, int w, int h, int selected,
                 enabled ? 255 : 150, enabled ? 205 : 150, enabled ? 80 : 155, 255);
     }
   }
+
+  /* contextual recommended-value hint at the panel bottom */
+  const char *reco = option_reco(selected);
+  if (reco)
+    draw_centered_text(ren, panel.x + panel.w / 2,
+                       panel.y + panel.h - (int)(46.0f * s + 0.5f),
+                       scale, reco, 150, 200, 255, 255);
 }
 
 static void keep_language_visible(int selected, int *scroll, int count) {
@@ -890,6 +954,8 @@ static void options_adjust(int row, int dir,
     step_sensitivity(&config.gyro_sensitivity_x, dir);
   } else if (row == OPT_ROW_GYRO_SENS_Y) {
     step_sensitivity(&config.gyro_sensitivity_y, dir);
+  } else if (row == OPT_ROW_GYRO_SPACE) {
+    cycle_gyro_space(dir);
   } else {
     toggle_option(row);
   }
@@ -1118,6 +1184,8 @@ int picker_run(void) {
               step_sensitivity(&config.gyro_sensitivity_x, 1);
             } else if (option_selected == OPT_ROW_GYRO_SENS_Y) {
               step_sensitivity(&config.gyro_sensitivity_y, 1);
+            } else if (option_selected == OPT_ROW_GYRO_SPACE) {
+              cycle_gyro_space(1);
             } else {
               toggle_option(option_selected);
             }
@@ -1245,10 +1313,14 @@ int picker_run(void) {
             }
           }
         } else if (view == PICKER_OPTIONS) {
-          SDL_Rect panel = centered_panel_rect(screen_w, screen_h, 920.0f, 860.0f);
+          SDL_Rect panel = centered_panel_rect(screen_w, screen_h, 920.0f, 900.0f);
           int handled = 0;
-          for (int i = 0; i < NUM_OPTION_ROWS; i++) {
-            SDL_Rect row = option_row_rect(&panel, i, screen_w, screen_h);
+          int scroll = option_scroll_for(option_selected);
+          for (int vr = 0; vr < OPT_VISIBLE_ROWS; vr++) {
+            int i = scroll + vr;
+            if (i >= NUM_OPTION_ROWS)
+              break;
+            SDL_Rect row = option_row_rect(&panel, vr, screen_w, screen_h);
             if (rect_contains(&row, tx, ty)) {
               option_selected = i;
               if (i == 1) {
@@ -1258,6 +1330,8 @@ int picker_run(void) {
                 step_sensitivity(&config.gyro_sensitivity_x, 1);
               } else if (i == OPT_ROW_GYRO_SENS_Y) {
                 step_sensitivity(&config.gyro_sensitivity_y, 1);
+              } else if (i == OPT_ROW_GYRO_SPACE) {
+                cycle_gyro_space(1);
               } else {
                 toggle_option(i);
               }
