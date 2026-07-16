@@ -24,7 +24,8 @@
   CONFIG_VAR_INT(touch_hud); \
   CONFIG_VAR_INT(console); \
   CONFIG_VAR_INT(gyro_enabled); \
-  CONFIG_VAR_INT(gyro_sensitivity); \
+  CONFIG_VAR_INT(gyro_sensitivity_x); \
+  CONFIG_VAR_INT(gyro_sensitivity_y); \
   CONFIG_VAR_INT(gyro_invert_y);
 
 Config config;
@@ -105,7 +106,8 @@ int read_config(const char *file) {
   config.touch_hud = 0;
   config.console = 1;
   config.gyro_enabled = 0;
-  config.gyro_sensitivity = 100;
+  config.gyro_sensitivity_x = 100;
+  config.gyro_sensitivity_y = 100;
   config.gyro_invert_y = 0;
 
   FILE *f = fopen(file, "r");

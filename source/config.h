@@ -38,7 +38,8 @@ typedef struct {
   int touch_hud;
   int console;
   int gyro_enabled;
-  int gyro_sensitivity;
+  int gyro_sensitivity_x;
+  int gyro_sensitivity_y;
   int gyro_invert_y;
 } Config;
 

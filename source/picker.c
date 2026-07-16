@@ -24,15 +24,16 @@
 #define STICK_THRESHOLD 16000
 #define STICK_DEADZONE 8000
 #define OPTIONS_INDEX NUM_GAMES
-#define NUM_OPTION_ROWS 8
+#define NUM_OPTION_ROWS 9
 
-#define OPT_ROW_GYRO        5
-#define OPT_ROW_GYRO_INVERT 6
-#define OPT_ROW_GYRO_SENS   7
+#define OPT_ROW_GYRO         5
+#define OPT_ROW_GYRO_INVERT  6
+#define OPT_ROW_GYRO_SENS_X  7
+#define OPT_ROW_GYRO_SENS_Y  8
 
 #define GYRO_SENS_MIN  10
-#define GYRO_SENS_MAX  400
-#define GYRO_SENS_STEP 10
+#define GYRO_SENS_MAX  1000
+#define GYRO_SENS_STEP 25
 #define MAX_LANG_OPTIONS 32
 #define LANG_VISIBLE_ROWS 9
 
@@ -710,7 +711,8 @@ static const char *option_label(int row) {
     "CONSOLE",
     "GYRO",
     "GYRO INVERT Y",
-    "GYRO SENS",
+    "GYRO SENS X",
+    "GYRO SENS Y",
   };
   return labels[row];
 }
@@ -740,11 +742,11 @@ static void toggle_option(int row) {
   write_config(CONFIG_NAME);
 }
 
-static void step_sensitivity(int dir) {
-  int v = config.gyro_sensitivity + dir * GYRO_SENS_STEP;
+static void step_sensitivity(int *field, int dir) {
+  int v = *field + dir * GYRO_SENS_STEP;
   if (v < GYRO_SENS_MIN) v = GYRO_SENS_MIN;
   if (v > GYRO_SENS_MAX) v = GYRO_SENS_MAX;
-  config.gyro_sensitivity = v;
+  *field = v;
   write_config(CONFIG_NAME);
 }
 
@@ -831,9 +833,11 @@ static void draw_options_menu(SDL_Renderer *ren, int w, int h, int selected,
       draw_centered_text(ren, value.x + value.w / 2,
                          value.y + (value.h - 7 * scale) / 2,
                          scale, label, 235, 235, 225, 255);
-    } else if (i == OPT_ROW_GYRO_SENS) {
+    } else if (i == OPT_ROW_GYRO_SENS_X || i == OPT_ROW_GYRO_SENS_Y) {
       char label[16];
-      snprintf(label, sizeof(label), "%d%%", config.gyro_sensitivity);
+      int sens = (i == OPT_ROW_GYRO_SENS_X) ? config.gyro_sensitivity_x
+                                            : config.gyro_sensitivity_y;
+      snprintf(label, sizeof(label), "%d%%", sens);
       int value_w = text_width(label, scale) + (int)(42.0f * s + 0.5f);
       SDL_Rect value = { row.x + row.w - value_w - (int)(24.0f * s + 0.5f),
                          row.y + (row.h - box) / 2, value_w, box };
@@ -882,8 +886,10 @@ static void options_adjust(int row, int dir,
   if (row == 1) {
     cycle_language(langs, *lang_count, dir);
     refresh_language_state(langs, lang_count, lang_selected, lang_scroll);
-  } else if (row == OPT_ROW_GYRO_SENS) {
-    step_sensitivity(dir);
+  } else if (row == OPT_ROW_GYRO_SENS_X) {
+    step_sensitivity(&config.gyro_sensitivity_x, dir);
+  } else if (row == OPT_ROW_GYRO_SENS_Y) {
+    step_sensitivity(&config.gyro_sensitivity_y, dir);
   } else {
     toggle_option(row);
   }
@@ -1108,8 +1114,10 @@ int picker_run(void) {
             if (option_selected == 1) {
               refresh_language_state(lang_options, &lang_count, &language_selected, &language_scroll);
               view = PICKER_LANGUAGE;
-            } else if (option_selected == OPT_ROW_GYRO_SENS) {
-              step_sensitivity(1);
+            } else if (option_selected == OPT_ROW_GYRO_SENS_X) {
+              step_sensitivity(&config.gyro_sensitivity_x, 1);
+            } else if (option_selected == OPT_ROW_GYRO_SENS_Y) {
+              step_sensitivity(&config.gyro_sensitivity_y, 1);
             } else {
               toggle_option(option_selected);
             }
@@ -1246,8 +1254,10 @@ int picker_run(void) {
               if (i == 1) {
                 refresh_language_state(lang_options, &lang_count, &language_selected, &language_scroll);
                 view = PICKER_LANGUAGE;
-              } else if (i == OPT_ROW_GYRO_SENS) {
-                step_sensitivity(1);
+              } else if (i == OPT_ROW_GYRO_SENS_X) {
+                step_sensitivity(&config.gyro_sensitivity_x, 1);
+              } else if (i == OPT_ROW_GYRO_SENS_Y) {
+                step_sensitivity(&config.gyro_sensitivity_y, 1);
               } else {
                 toggle_option(i);
               }

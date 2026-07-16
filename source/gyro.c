@@ -87,15 +87,18 @@ void gyro_frame(void) {
   if (hidGetSixAxisSensorStates(h, &st, 1) < 1)
     return;
 
-  /* Local-space mapping. Signs are finalized on-device (see plan verify step):
+  /* Local-space mapping, signs verified on-device:
    *   yaw   <- rotation about the controller's vertical axis   (angular_velocity.y)
-   *   pitch <- rotation about the controller's left-right axis (angular_velocity.x) */
+   *   pitch <- rotation about the controller's left-right axis (angular_velocity.x)
+   * Both are negated so the un-inverted default matches natural aiming; the
+   * gyro_invert_y toggle flips the vertical axis back for those who prefer it. */
   const float ang_yaw   = -st.angular_velocity.y;
-  const float ang_pitch =  st.angular_velocity.x;
+  const float ang_pitch = -st.angular_velocity.x;
 
   int dx = 0, dy = 0;
   gyro_math_step(&g_accum, ang_yaw, ang_pitch,
-                 config.gyro_sensitivity, config.gyro_invert_y, &dx, &dy);
+                 config.gyro_sensitivity_x, config.gyro_sensitivity_y,
+                 config.gyro_invert_y, &dx, &dy);
   if (dx == 0 && dy == 0)
     return;
 

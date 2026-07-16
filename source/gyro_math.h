@@ -15,17 +15,17 @@ typedef struct {
 
 /* Convert one frame of angular velocity into an integer relative-mouse delta.
  *
- *   ang_yaw     : angular velocity mapped to horizontal look
- *   ang_pitch   : angular velocity mapped to vertical look
- *   sensitivity : integer percent; 100 == base scale
- *   invert_y    : non-zero flips the vertical delta
- *   out_dx/dy   : integer mouse deltas (may be 0)
+ *   ang_yaw       : angular velocity mapped to horizontal look
+ *   ang_pitch     : angular velocity mapped to vertical look
+ *   sens_x/sens_y : integer percent per axis; 100 == base scale
+ *   invert_y      : non-zero flips the vertical delta
+ *   out_dx/dy     : integer mouse deltas (may be 0)
  *
  * The fractional part is accumulated in *acc across calls.
  */
 void gyro_math_step(GyroAccum *acc,
                     float ang_yaw, float ang_pitch,
-                    int sensitivity, int invert_y,
+                    int sens_x, int sens_y, int invert_y,
                     int *out_dx, int *out_dy);
 
 #endif
