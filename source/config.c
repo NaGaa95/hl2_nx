@@ -22,7 +22,15 @@
   CONFIG_VAR_INT(show_fps); \
   CONFIG_VAR_INT(gamepad); \
   CONFIG_VAR_INT(touch_hud); \
-  CONFIG_VAR_INT(console);
+  CONFIG_VAR_INT(console); \
+  CONFIG_VAR_INT(gyro_enabled); \
+  CONFIG_VAR_INT(gyro_sensitivity_x); \
+  CONFIG_VAR_INT(gyro_sensitivity_y); \
+  CONFIG_VAR_INT(gyro_invert_x); \
+  CONFIG_VAR_INT(gyro_invert_y); \
+  CONFIG_VAR_INT(gyro_space); \
+  CONFIG_VAR_INT(gyro_tighten); \
+  CONFIG_VAR_INT(gyro_accel);
 
 Config config;
 
@@ -101,6 +109,14 @@ int read_config(const char *file) {
   config.gamepad = 1;
   config.touch_hud = 0;
   config.console = 1;
+  config.gyro_enabled = 0;
+  config.gyro_sensitivity_x = 100;
+  config.gyro_sensitivity_y = 100;
+  config.gyro_invert_x = 0;
+  config.gyro_invert_y = 0;
+  config.gyro_space = 0;
+  config.gyro_tighten = 0;
+  config.gyro_accel = 0;
 
   FILE *f = fopen(file, "r");
   if (f == NULL)
