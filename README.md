@@ -78,3 +78,8 @@ game.
 
 Unless specified otherwise, the source code provided in this repository is licensed under the MIT
 License. Please see the accompanying LICENSE file.
+
+### SaltyNX telemetry
+
+FPS and render resolution are published to SaltyNX shared memory for compatible overlays. The port continues normally when SaltyNX is not running. This reports presentation timing and resolution; it does not change the game's frame cap.
+The old wrapper FPS overlay and its `show_fps` setting have been removed. Existing config entries are ignored; use a SaltyNX-compatible overlay to view FPS.

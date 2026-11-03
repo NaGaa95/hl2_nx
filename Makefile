@@ -46,6 +46,9 @@ LDFLAGS	=	-specs=$(DEVKITPRO)/libnx/switch.specs -g $(ARCH) -Wl,-Map,$(notdir $*
 # pseudo-modules togl resolves GL entry points from.
 # switch-ffmpeg decodes the startup videos (Valve logo / Bink); its libs have
 # circular deps so wrap them in a link group. bz2/dav1d are avcodec deps.
+# Publish all EGL presentation paths, including guest import tables.
+LDFLAGS += -Wl,--wrap=eglSwapBuffers,--wrap=eglGetProcAddress,--wrap=__libnx_exit
+
 LIBS	:= -lSDL2_image -ljpeg -lpng -lwebp \
 		-lSDL2 -lEGL -lGLESv2 -lglapi -ldrm_nouveau \
 		-Wl,--start-group -lavformat -lavcodec -lswscale -lswresample -lavutil -lbz2 -ldav1d -Wl,--end-group \

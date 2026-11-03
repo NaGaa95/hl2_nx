@@ -7,6 +7,7 @@
  * Distributed under the MIT license. See LICENSE for details.
  */
 
+#include "saltynx.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -289,8 +290,6 @@ static int option_arg_takes_value(const char *arg) {
          !strcmp(arg, "joystick") ||
          !strcmp(arg, "+touch_enable") ||
          !strcmp(arg, "touch_enable") ||
-         !strcmp(arg, "+cl_showfps") ||
-         !strcmp(arg, "cl_showfps") ||
          !strcmp(arg, "-language") ||
          !strcmp(arg, "-audiolanguage");
 }
@@ -397,8 +396,6 @@ static void setup_game_environment(so_module *launcher) {
   append_user_args(cmdline, sizeof(cmdline), config.args);
   if (config.console)
     append_arg(cmdline, sizeof(cmdline), "-console");
-  append_arg(cmdline, sizeof(cmdline), "+cl_showfps");
-  append_arg(cmdline, sizeof(cmdline), config.show_fps ? "1" : "0");
   append_arg(cmdline, sizeof(cmdline), "+joystick");
   append_arg(cmdline, sizeof(cmdline), config.gamepad ? "1" : "0");
   append_arg(cmdline, sizeof(cmdline), "+touch_enable");
@@ -471,6 +468,8 @@ static void start_clock_thread(void) {
 }
 
 int main(void) {
+  saltynx_start();
+  atexit(saltynx_stop);
   cpu_boost(1);
 
   check_syscalls();

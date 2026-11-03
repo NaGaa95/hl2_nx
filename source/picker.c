@@ -25,17 +25,17 @@
 #define STICK_THRESHOLD 16000
 #define STICK_DEADZONE 8000
 #define OPTIONS_INDEX NUM_GAMES
-#define NUM_OPTION_ROWS 13
+#define NUM_OPTION_ROWS 12
 #define OPT_VISIBLE_ROWS 9
 
-#define OPT_ROW_GYRO          5
-#define OPT_ROW_GYRO_INVERT_X 6
-#define OPT_ROW_GYRO_INVERT_Y 7
-#define OPT_ROW_GYRO_SENS_X   8
-#define OPT_ROW_GYRO_SENS_Y   9
-#define OPT_ROW_GYRO_SPACE    10
-#define OPT_ROW_GYRO_TIGHTEN  11
-#define OPT_ROW_GYRO_ACCEL    12
+#define OPT_ROW_GYRO          4
+#define OPT_ROW_GYRO_INVERT_X 5
+#define OPT_ROW_GYRO_INVERT_Y 6
+#define OPT_ROW_GYRO_SENS_X   7
+#define OPT_ROW_GYRO_SENS_Y   8
+#define OPT_ROW_GYRO_SPACE    9
+#define OPT_ROW_GYRO_TIGHTEN  10
+#define OPT_ROW_GYRO_ACCEL    11
 
 #define GYRO_SENS_MIN  10
 #define GYRO_SENS_MAX  1000
@@ -710,7 +710,6 @@ static void draw_options_button(SDL_Renderer *ren, int w, int h, int active) {
 
 static const char *option_label(int row) {
   static const char *const labels[NUM_OPTION_ROWS] = {
-    "SHOWFPS",
     "LANGUAGE",
     "GAMEPAD",
     "TOUCH HUD",
@@ -729,10 +728,9 @@ static const char *option_label(int row) {
 
 static int option_enabled(int row) {
   switch (row) {
-  case 0: return config.show_fps;
-  case 2: return config.gamepad;
-  case 3: return config.touch_hud;
-  case 4: return config.console;
+  case 1: return config.gamepad;
+  case 2: return config.touch_hud;
+  case 3: return config.console;
   case OPT_ROW_GYRO: return config.gyro_enabled;
   case OPT_ROW_GYRO_INVERT_X: return config.gyro_invert_x;
   case OPT_ROW_GYRO_INVERT_Y: return config.gyro_invert_y;
@@ -744,10 +742,9 @@ static int option_enabled(int row) {
 
 static void toggle_option(int row) {
   switch (row) {
-  case 0: config.show_fps = !config.show_fps; break;
-  case 2: config.gamepad = !config.gamepad; break;
-  case 3: config.touch_hud = !config.touch_hud; break;
-  case 4: config.console = !config.console; break;
+  case 1: config.gamepad = !config.gamepad; break;
+  case 2: config.touch_hud = !config.touch_hud; break;
+  case 3: config.console = !config.console; break;
   case OPT_ROW_GYRO: config.gyro_enabled = !config.gyro_enabled; break;
   case OPT_ROW_GYRO_INVERT_X: config.gyro_invert_x = !config.gyro_invert_x; break;
   case OPT_ROW_GYRO_INVERT_Y: config.gyro_invert_y = !config.gyro_invert_y; break;
@@ -886,7 +883,7 @@ static void draw_options_menu(SDL_Renderer *ren, int w, int h, int selected,
     /* value-box rows (language, sensitivities, gyro space) vs toggle rows */
     const char *value = NULL;
     char valbuf[16];
-    if (i == 1) {
+    if (i == 0) {
       int lang_row = selected_language_row(langs, lang_count);
       value = language_options[langs[lang_row]].label;
     } else if (i == OPT_ROW_GYRO_SENS_X) {
@@ -952,7 +949,7 @@ static void refresh_language_state(int *langs, int *count, int *selected, int *s
 static void options_adjust(int row, int dir,
                            int *langs, int *lang_count,
                            int *lang_selected, int *lang_scroll) {
-  if (row == 1) {
+  if (row == 0) {
     cycle_language(langs, *lang_count, dir);
     refresh_language_state(langs, lang_count, lang_selected, lang_scroll);
   } else if (row == OPT_ROW_GYRO_SENS_X) {
@@ -1182,7 +1179,7 @@ int picker_run(void) {
             result = 1;
             running = false;
           } else if (view == PICKER_OPTIONS) {
-            if (option_selected == 1) {
+            if (option_selected == 0) {
               refresh_language_state(lang_options, &lang_count, &language_selected, &language_scroll);
               view = PICKER_LANGUAGE;
             } else if (option_selected == OPT_ROW_GYRO_SENS_X) {
@@ -1328,7 +1325,7 @@ int picker_run(void) {
             SDL_Rect row = option_row_rect(&panel, vr, screen_w, screen_h);
             if (rect_contains(&row, tx, ty)) {
               option_selected = i;
-              if (i == 1) {
+              if (i == 0) {
                 refresh_language_state(lang_options, &lang_count, &language_selected, &language_scroll);
                 view = PICKER_LANGUAGE;
               } else if (i == OPT_ROW_GYRO_SENS_X) {
