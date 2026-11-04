@@ -44,6 +44,23 @@
 #include "libc_shim.h"
 #include "dl_emu.h"
 #include "video_player.h"
+#include "archive_cache.h"
+
+static int remove_cached(const char *path) {
+  archive_cache_invalidate(path);
+  return remove(path);
+}
+
+static int unlink_cached(const char *path) {
+  archive_cache_invalidate(path);
+  return unlink(path);
+}
+
+static int rename_cached(const char *from, const char *to) {
+  archive_cache_invalidate(from);
+  archive_cache_invalidate(to);
+  return rename(from, to);
+}
 
 extern uintptr_t __cxa_atexit;
 extern uintptr_t __stack_chk_fail;
@@ -1126,11 +1143,11 @@ DynLibFunction dynlib_functions[] = {
   { "open", (uintptr_t)&open_fake },
   { "read", (uintptr_t)&read },
   { "realpath", (uintptr_t)&realpath_fake },
-  { "remove", (uintptr_t)&remove },
-  { "rename", (uintptr_t)&rename },
+  { "remove", (uintptr_t)&remove_cached },
+  { "rename", (uintptr_t)&rename_cached },
   { "stat", (uintptr_t)&stat_fake },
   { "statfs64", (uintptr_t)&statfs64_fake },
-  { "unlink", (uintptr_t)&unlink },
+  { "unlink", (uintptr_t)&unlink_cached },
   { "utimensat", (uintptr_t)&ret0 },
   { "write", (uintptr_t)&write },
 

@@ -37,6 +37,7 @@
 #include "libc_shim.h"
 #include "dl_emu.h"
 #include "archive_io.h"
+#include "archive_cache.h"
 
 // ---------------------------------------------------------------------------
 // fortify (_chk) wrappers: ignore the object-size argument
@@ -350,6 +351,8 @@ int open_fake(const char *path, int flags, ...) {
     errno = ENOENT;
     return -1;
   }
+  if ((flags & 3) || (flags & (LINUX_O_CREAT | LINUX_O_TRUNC)))
+    archive_cache_invalidate(path);
   int fd = open(path, convert_open_flags(flags), mode);
   return fd;
 }
@@ -1195,7 +1198,7 @@ size_t fwrite_fake(const void *ptr, size_t size, size_t n, FILE *f) {
 size_t fread_fake(void *ptr, size_t size, size_t n, FILE *f) {
   if (is_fake_file(f))
     return 0;
-  return fread(ptr, size, n, f);
+  return archive_cache_read(ptr, size, n, f);
 }
 
 int fputc_fake(int c, FILE *f) {
@@ -1221,6 +1224,7 @@ int fflush_fake(FILE *f) {
 int fclose_fake(FILE *f) {
   if (is_fake_file(f))
     return 0;
+  archive_cache_forget(f);
   return fclose(f);
 }
 
@@ -1306,7 +1310,9 @@ char *fgets_fake(char *s, int n, FILE *f) {
 int ungetc_fake(int c, FILE *f) {
   if (is_fake_file(f))
     return -1;
-  return ungetc(c, f);
+  const int result = ungetc(c, f);
+  if (result != EOF) archive_cache_forget(f);
+  return result;
 }
 
 void rewind_fake(FILE *f) {
@@ -1318,13 +1324,21 @@ void rewind_fake(FILE *f) {
 FILE *freopen_fake(const char *path, const char *mode, FILE *f) {
   if (is_fake_file(f))
     return f; // pretend the redirect worked
-  return freopen(path, mode, f);
+  archive_cache_forget(f);
+  if (mode && (mode[0] != 'r' || strchr(mode, '+')))
+    archive_cache_invalidate(path);
+  FILE *result = freopen(path, mode, f);
+  const int unbuffered = archive_stdio_setup(result, path, mode);
+  archive_cache_open(result, path, mode, unbuffered);
+  return result;
 }
 
 int setvbuf_fake(FILE *f, char *buf, int mode, size_t size) {
   if (is_fake_file(f))
     return 0;
-  return setvbuf(f, buf, mode, size);
+  const int result = setvbuf(f, buf, mode, size);
+  if (!result) archive_cache_forget(f);
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -1436,8 +1450,11 @@ FILE *fopen_fake(const char *path, const char *mode) {
     if (!strncmp(path, "/proc/", 6) || !strncmp(path, "/sys/", 5) || !strncmp(path, "/dev/", 5))
       return NULL;
   }
+  if (mode && (mode[0] != 'r' || strchr(mode, '+')))
+    archive_cache_invalidate(path);
   FILE *f = fopen(path, mode);
-  archive_stdio_setup(f, path, mode);
+  const int unbuffered = archive_stdio_setup(f, path, mode);
+  archive_cache_open(f, path, mode, unbuffered);
   return f;
 }
 

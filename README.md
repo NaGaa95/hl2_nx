@@ -103,3 +103,18 @@ HL2 and both episodes use these controls with paired Joy-Con or a Pro Controller
 Empty and unchanged stock controller profiles receive these defaults. Customized saved profiles keep their bindings, sensitivity and axis settings. Overrides in the selected game's `cfg/autoexec.cfg` take priority, including `unbind` and scripts executed from autoexec. Source uses SDL button names: `A_BUTTON`, `B_BUTTON`, `X_BUTTON`, `Y_BUTTON` correspond to Switch B, A, Y, X respectively.
 
 Use `exec switch_controller.cfg` in the game console or autoexec to restore the default button bindings. This command is built into the port and requires no additional file. The engine saves the resulting bindings normally.
+
+### Loading
+
+Read-only game archives use a RAM cache of up to 64 MiB to avoid repeated SD card reads. Memory is allocated as needed; normal reads remain available if allocation fails. Save files and configuration files keep their usual I/O behavior.
+
+The cache regression test runs on Linux:
+
+```sh
+cc -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -Isource \
+  tests/archive_cache_test.c source/archive_cache.c source/archive_io.c -pthread \
+  -Wl,--wrap=malloc,--wrap=fread,--wrap=fseeko -o /tmp/hl2-archive-cache-test
+/tmp/hl2-archive-cache-test full
+/tmp/hl2-archive-cache-test oom
+/tmp/hl2-archive-cache-test limited
+```
