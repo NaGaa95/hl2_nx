@@ -25,6 +25,7 @@
 #include "jni_fake.h"
 #include "picker.h"
 #include "game_patches.h"
+#include "controller.h"
 
 static void *heap_so_base = NULL;
 static size_t heap_so_limit = 0;
@@ -244,6 +245,7 @@ static void load_modules(void) {
   }
 
   apply_game_patches();
+  controller_prepare(so_find_module("libengine.so"), so_find_module("libinputsystem.so"));
 
   // pass 3: map as code, then run initializers in dependency order
   for (unsigned int i = 0; i < NUM_MODULES; i++) {
@@ -254,6 +256,7 @@ static void load_modules(void) {
     so_execute_init_array(&modules[i]);
     so_free_temp(&modules[i]);
   }
+  controller_install();
 }
 
 static void append_arg(char *dst, size_t dst_size, const char *arg) {

@@ -675,6 +675,8 @@ static int gamma_init(void) {
   glDeleteShader(f);
   if (!ok) {
     debugPrintf("gamma: program link failed\n");
+    glDeleteProgram(gamma_prog);
+    gamma_prog = 0;
     return 0;
   }
   gamma_u_scene = glGetUniformLocation(gamma_prog, "uScene");
@@ -715,19 +717,26 @@ static void gamma_upload_lut(void) {
 static void apply_display_pass(SDL_Window *window) {
   if (g_gamma_identity)
     return;
-  if (!gamma_inited && !gamma_init())
-    return;
 
   int w = 0, h = 0;
   SDL_GL_GetDrawableSize(window, &w, &h);
   if (w <= 0 || h <= 0) { w = screen_width; h = screen_height; }
 
-  GLint prevProg = 0, prevVAO = 0, prevActive = 0, prevFBO = 0, prevTex0 = 0, prevTex1 = 0, vp[4];
+  GLint prevProg = 0, prevVAO = 0, prevActive = 0, prevDrawFBO = 0, prevReadFBO = 0;
+  GLint prevTex0 = 0, prevTex1 = 0, prevSampler0 = 0, prevSampler1 = 0, vp[4];
+  GLint prevUnpackBuffer = 0, prevUnpackAlignment = 0, prevUnpackRowLength = 0;
+  GLint prevUnpackSkipRows = 0, prevUnpackSkipPixels = 0;
   glGetIntegerv(GL_CURRENT_PROGRAM, &prevProg);
   glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &prevVAO);
   glGetIntegerv(GL_ACTIVE_TEXTURE, &prevActive);
-  glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFBO);
+  glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &prevDrawFBO);
+  glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &prevReadFBO);
   glGetIntegerv(GL_VIEWPORT, vp);
+  glGetIntegerv(GL_PIXEL_UNPACK_BUFFER_BINDING, &prevUnpackBuffer);
+  glGetIntegerv(GL_UNPACK_ALIGNMENT, &prevUnpackAlignment);
+  glGetIntegerv(GL_UNPACK_ROW_LENGTH, &prevUnpackRowLength);
+  glGetIntegerv(GL_UNPACK_SKIP_ROWS, &prevUnpackSkipRows);
+  glGetIntegerv(GL_UNPACK_SKIP_PIXELS, &prevUnpackSkipPixels);
   const GLboolean bDepth = glIsEnabled(GL_DEPTH_TEST), bBlend = glIsEnabled(GL_BLEND),
                   bCull = glIsEnabled(GL_CULL_FACE), bScissor = glIsEnabled(GL_SCISSOR_TEST),
                   bStencil = glIsEnabled(GL_STENCIL_TEST);
@@ -735,12 +744,23 @@ static void apply_display_pass(SDL_Window *window) {
   GLboolean cmask[4];
   glGetBooleanv(GL_COLOR_WRITEMASK, cmask);
 
-  glBindFramebuffer(GL_FRAMEBUFFER, 0);
   glActiveTexture(GL_TEXTURE1);
   glGetIntegerv(GL_TEXTURE_BINDING_2D, &prevTex1);
+  glGetIntegerv(GL_SAMPLER_BINDING, &prevSampler1);
   glActiveTexture(GL_TEXTURE0);
   glGetIntegerv(GL_TEXTURE_BINDING_2D, &prevTex0);
+  glGetIntegerv(GL_SAMPLER_BINDING, &prevSampler0);
 
+  // Capture the game's bindings before initialization also creates textures.
+  glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+  glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+  glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+  glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
+  glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
+  if (!gamma_inited && !gamma_init())
+    goto restore_bindings;
+
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
   glBindTexture(GL_TEXTURE_2D, gamma_scene_tex);
   if (w != gamma_tex_w || h != gamma_tex_h) {
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
@@ -758,16 +778,25 @@ static void apply_display_pass(SDL_Window *window) {
 
   glBindVertexArray(gamma_vao);
   glUseProgram(gamma_prog);
+  glBindSampler(0, 0); glBindSampler(1, 0);
   glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, gamma_scene_tex); glUniform1i(gamma_u_scene, 0);
   glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, gamma_lut_tex); glUniform1i(gamma_u_lut, 1);
   glDrawArrays(GL_TRIANGLES, 0, 3);
 
+restore_bindings:
+  glBindBuffer(GL_PIXEL_UNPACK_BUFFER, prevUnpackBuffer);
+  glPixelStorei(GL_UNPACK_ALIGNMENT, prevUnpackAlignment);
+  glPixelStorei(GL_UNPACK_ROW_LENGTH, prevUnpackRowLength);
+  glPixelStorei(GL_UNPACK_SKIP_ROWS, prevUnpackSkipRows);
+  glPixelStorei(GL_UNPACK_SKIP_PIXELS, prevUnpackSkipPixels);
+  glBindSampler(0, prevSampler0); glBindSampler(1, prevSampler1);
   glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, prevTex1);
   glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, prevTex0);
   glActiveTexture(prevActive);
   glBindVertexArray(prevVAO);
   glUseProgram(prevProg);
-  glBindFramebuffer(GL_FRAMEBUFFER, prevFBO);
+  glBindFramebuffer(GL_DRAW_FRAMEBUFFER, prevDrawFBO);
+  glBindFramebuffer(GL_READ_FRAMEBUFFER, prevReadFBO);
   glViewport(vp[0], vp[1], vp[2], vp[3]);
   if (bDepth) glEnable(GL_DEPTH_TEST);
   if (bBlend) glEnable(GL_BLEND);

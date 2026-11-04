@@ -83,3 +83,23 @@ License. Please see the accompanying LICENSE file.
 
 FPS and render resolution are published to SaltyNX shared memory for compatible overlays. The port continues normally when SaltyNX is not running. This reports presentation timing and resolution; it does not change the game's frame cap.
 The old wrapper FPS overlay and its `show_fps` setting have been removed. Existing config entries are ignored; use a SaltyNX-compatible overlay to view FPS.
+
+The in-game video options support brightness adjustment. Game settings and bindings are separate from the launcher's `config.txt`: each game stores its own settings in `hl2/cfg/config.cfg`, `episodic/cfg/config.cfg`, or `ep2/cfg/config.cfg`. Use the in-game Quit option to let the engine finish saving. An `autoexec.cfg` or `userconfig.cfg` can override saved settings.
+
+### Controller defaults
+
+HL2 and both episodes use these controls with paired Joy-Con or a Pro Controller:
+
+| Switch control | Action |
+| --- | --- |
+| B / A | Jump / reload |
+| Y / X | Use / flashlight |
+| L / R | Sprint / gravity-gun quick swap |
+| ZL / ZR | Secondary / primary fire |
+| Left-stick / right-stick click | Toggle crouch / suit zoom |
+| Minus / Plus | Squad orders / pause |
+| D-pad | Weapon selection |
+
+Empty and unchanged stock controller profiles receive these defaults. Customized saved profiles keep their bindings, sensitivity and axis settings. Overrides in the selected game's `cfg/autoexec.cfg` take priority, including `unbind` and scripts executed from autoexec. Source uses SDL button names: `A_BUTTON`, `B_BUTTON`, `X_BUTTON`, `Y_BUTTON` correspond to Switch B, A, Y, X respectively.
+
+Use `exec switch_controller.cfg` in the game console or autoexec to restore the default button bindings. This command is built into the port and requires no additional file. The engine saves the resulting bindings normally.
