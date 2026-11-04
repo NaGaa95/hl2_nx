@@ -36,6 +36,7 @@
 #include "so_util.h"
 #include "libc_shim.h"
 #include "dl_emu.h"
+#include "archive_io.h"
 
 // ---------------------------------------------------------------------------
 // fortify (_chk) wrappers: ignore the object-size argument
@@ -1436,6 +1437,7 @@ FILE *fopen_fake(const char *path, const char *mode) {
       return NULL;
   }
   FILE *f = fopen(path, mode);
+  archive_stdio_setup(f, path, mode);
   return f;
 }
 
